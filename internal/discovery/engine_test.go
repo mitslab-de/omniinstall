@@ -401,11 +401,19 @@ func TestCatalog_Get_Unknown(t *testing.T) {
 
 func TestMVPCatalog_HasRequiredApplications(t *testing.T) {
 	c := discovery.MVPCatalog()
-	required := []string{"obs-studio", "vlc", "firefox", "bitwarden", "git", "docker", "visual-studio-code"}
+	required := []string{"obs-studio", "vlc", "firefox", "bitwarden", "git", "docker", "visual-studio-code", "curl", "htop", "neovim"}
 	for _, id := range required {
 		if a := c.Get(id); a == nil {
 			t.Errorf("expected application %q in MVP catalog, not found", id)
 		}
+	}
+}
+
+func TestMVPCatalog_HasMinimumApplicationCount(t *testing.T) {
+	c := discovery.MVPCatalog()
+	const minApps = 10
+	if got := len(c.All()); got < minApps {
+		t.Errorf("MVP catalog should have at least %d applications, got %d", minApps, got)
 	}
 }
 
