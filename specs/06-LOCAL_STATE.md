@@ -42,6 +42,13 @@ Optional fields:
 - migration friendly
 - corruption resistant
 
+### File Schema Versioning
+
+- top-level `schema_version` field is required for newly written state files
+- current writer emits `schema_version: "1.0"`
+- loaders must remain backward-compatible with legacy files that do not have `schema_version`
+- incompatible major schema versions must fail with clear, user-facing errors
+
 ---
 
 ## MVP Goal
