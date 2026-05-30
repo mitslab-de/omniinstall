@@ -32,4 +32,9 @@ type Engine interface {
 
 	// Remove removes an application by ID using the given source details.
 	Remove(applicationID string, sourceType source.Type, sourceIdentifier string) (*Result, error)
+
+	// Verify re-runs post-install verification for an application without
+	// reinstalling it. Returns a structured result indicating verification
+	// status.
+	Verify(applicationID string, sourceType source.Type, sourceIdentifier string) (*Result, error)
 }

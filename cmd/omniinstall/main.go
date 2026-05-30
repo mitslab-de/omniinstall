@@ -115,6 +115,13 @@ func run(args []string) error {
 		}
 		app := newApp(os.Stdout)
 		return app.remove(appID)
+	case "verify":
+		appID := ""
+		if len(args) > 1 {
+			appID = args[1]
+		}
+		app := newApp(os.Stdout)
+		return app.verify(appID)
 	case "explain":
 		jsonOutput, positional, err := parseJSONFlag(args[1:])
 		if err != nil {
@@ -162,6 +169,7 @@ Commands:
   search <query>    Search for an application (use --json for machine output)
   install <app>     Install an application
   remove <app>      Remove an application
+  verify <app>      Re-run verification for an installed application
   explain <app>     Show why a source was selected for an application (use --json for machine output)
   list              List installed applications (use --json for machine output)
   version           Show version information

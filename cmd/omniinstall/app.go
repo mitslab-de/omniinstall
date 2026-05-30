@@ -257,6 +257,49 @@ func (a *App) install(appID string) error {
 	return nil
 }
 
+// verify handles `omni verify <app>`.
+//
+// It re-runs post-install verification for an already-installed application
+// without reinstalling it, and updates the verification status in local state.
+func (a *App) verify(appID string) error {
+	if appID == "" {
+		return errors.New("usage: omni verify <application>")
+	}
+
+	rec, ok, err := a.store.Get(appID)
+	if err != nil {
+		return fmt.Errorf("could not read local state: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("application %q is not recorded as installed", appID)
+	}
+	if rec.InstallStatus == state.StatusRemoved {
+		return fmt.Errorf("application %q has been removed", appID)
+	}
+
+	result, err := a.engine.Verify(appID, rec.SourceType, rec.SourceIdentifier)
+	if err != nil {
+		return fmt.Errorf("verify engine error: %w", err)
+	}
+
+	// Update verification status in local state.
+	newStatus := state.VerificationPassed
+	if !result.Success {
+		newStatus = state.VerificationFailed
+	}
+	rec.VerificationStatus = newStatus
+	if storeErr := a.store.Record(rec); storeErr != nil {
+		return fmt.Errorf("could not update verification status: %w", storeErr)
+	}
+
+	if result.Success {
+		fmt.Fprintf(a.out, "✔ %s\n", result.Message)
+	} else {
+		fmt.Fprintf(a.out, "✘ %s\n", result.Message)
+	}
+	return nil
+}
+
 // remove handles `omni remove <app>`.
 func (a *App) remove(appID string) error {
 	if appID == "" {

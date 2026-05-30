@@ -58,6 +58,8 @@ type mockAdapter struct {
 	installResult *adapter.Result
 	removeResult  *adapter.Result
 	removedIDs    []string
+	verifyResult  *adapter.VerificationResult
+	verifyErr     error
 }
 
 func (m *mockAdapter) Name() string      { return m.name }
@@ -87,6 +89,12 @@ func (m *mockAdapter) Remove(id string) (*adapter.Result, error) {
 	return &adapter.Result{Success: true, Message: "removed", ChangedSystem: true}, nil
 }
 func (m *mockAdapter) Verify(plan *install.Plan) (*adapter.VerificationResult, error) {
+	if m.verifyErr != nil {
+		return nil, m.verifyErr
+	}
+	if m.verifyResult != nil {
+		return m.verifyResult, nil
+	}
 	return &adapter.VerificationResult{Verified: true, Details: "ok"}, nil
 }
 
@@ -621,5 +629,150 @@ for _, c := range out.Conflicts {
 if c.Suggestion == "" {
 t.Errorf("expected suggestion for conflict kind %q, got empty", c.Kind)
 }
+}
+}
+
+// ---------------------------------------------------------------------------
+// verify tests
+// ---------------------------------------------------------------------------
+
+func TestAppVerify_Success(t *testing.T) {
+buf := &strings.Builder{}
+store := newMockStore()
+_ = store.Record(state.LocalInstallation{
+ApplicationID:      "git",
+SourceType:         source.TypeAPT,
+SourceIdentifier:   "git",
+InstallTimestamp:   time.Now(),
+InstallStatus:      state.StatusInstalled,
+VerificationStatus: state.VerificationPending,
+})
+eng := engine.NewDefaultEngine([]adapter.Adapter{&mockAdapter{
+name:         "apt",
+available:    true,
+handledTypes: []source.Type{source.TypeAPT},
+}}, nil)
+app := newAppForTest(buf, eng, store, aptManagers())
+
+if err := app.verify("git"); err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+out := buf.String()
+if !strings.Contains(out, "✔") {
+t.Errorf("expected checkmark in output, got %q", out)
+}
+rec, found, _ := store.Get("git")
+if !found {
+t.Fatal("state record not found")
+}
+if rec.VerificationStatus != state.VerificationPassed {
+t.Errorf("expected VerificationPassed, got %s", rec.VerificationStatus)
+}
+}
+
+func TestAppVerify_Failed(t *testing.T) {
+buf := &strings.Builder{}
+store := newMockStore()
+_ = store.Record(state.LocalInstallation{
+ApplicationID:      "git",
+SourceType:         source.TypeAPT,
+SourceIdentifier:   "git",
+InstallTimestamp:   time.Now(),
+InstallStatus:      state.StatusInstalled,
+VerificationStatus: state.VerificationPending,
+})
+eng := engine.NewDefaultEngine([]adapter.Adapter{&mockAdapter{
+name:         "apt",
+available:    true,
+handledTypes: []source.Type{source.TypeAPT},
+verifyResult: &adapter.VerificationResult{Verified: false, Details: "binary not found"},
+}}, nil)
+app := newAppForTest(buf, eng, store, aptManagers())
+
+if err := app.verify("git"); err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+out := buf.String()
+if !strings.Contains(out, "✘") {
+t.Errorf("expected cross in output, got %q", out)
+}
+rec, found, _ := store.Get("git")
+if !found {
+t.Fatal("state record not found")
+}
+if rec.VerificationStatus != state.VerificationFailed {
+t.Errorf("expected VerificationFailed, got %s", rec.VerificationStatus)
+}
+}
+
+func TestAppVerify_EmptyAppID(t *testing.T) {
+buf := &strings.Builder{}
+app := newAppWithStore(buf, newMockStore(), aptManagers())
+if err := app.verify(""); err == nil {
+t.Error("expected error for empty appID")
+}
+}
+
+func TestAppVerify_NotInstalled(t *testing.T) {
+buf := &strings.Builder{}
+app := newAppForTest(buf, successEngine(source.TypeAPT), newMockStore(), aptManagers())
+err := app.verify("git")
+if err == nil {
+t.Error("expected error when app is not recorded")
+}
+if !strings.Contains(err.Error(), "not recorded") {
+t.Errorf("expected 'not recorded' in error, got %v", err)
+}
+}
+
+func TestAppVerify_RemovedApp(t *testing.T) {
+buf := &strings.Builder{}
+store := newMockStore()
+_ = store.Record(state.LocalInstallation{
+ApplicationID:      "git",
+SourceType:         source.TypeAPT,
+SourceIdentifier:   "git",
+InstallTimestamp:   time.Now(),
+InstallStatus:      state.StatusRemoved,
+VerificationStatus: state.VerificationSkipped,
+})
+app := newAppForTest(buf, successEngine(source.TypeAPT), store, aptManagers())
+err := app.verify("git")
+if err == nil {
+t.Error("expected error for removed app")
+}
+if !strings.Contains(err.Error(), "has been removed") {
+t.Errorf("expected 'has been removed' in error, got %v", err)
+}
+}
+
+func TestAppVerify_UpdatesStateOnFailure(t *testing.T) {
+buf := &strings.Builder{}
+store := newMockStore()
+_ = store.Record(state.LocalInstallation{
+ApplicationID:      "obs-studio",
+SourceType:         source.TypeFlatpak,
+SourceIdentifier:   "com.obsproject.Studio",
+InstallTimestamp:   time.Now(),
+InstallStatus:      state.StatusInstalled,
+VerificationStatus: state.VerificationPassed,
+})
+failAdapter := &mockAdapter{
+name:         "flatpak",
+available:    true,
+handledTypes: []source.Type{source.TypeFlatpak},
+verifyResult: &adapter.VerificationResult{Verified: false, Details: "not found in flatpak list"},
+}
+eng := engine.NewDefaultEngine([]adapter.Adapter{failAdapter}, nil)
+app := newAppForTest(buf, eng, store, flatpakManagers())
+
+_ = app.verify("obs-studio")
+
+rec, found, _ := store.Get("obs-studio")
+if !found {
+t.Fatal("state record not found")
+}
+if rec.VerificationStatus != state.VerificationFailed {
+t.Errorf("expected VerificationFailed after negative verify, got %s", rec.VerificationStatus)
 }
 }

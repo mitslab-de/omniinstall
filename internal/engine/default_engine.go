@@ -371,6 +371,113 @@ func (e *DefaultEngine) Remove(applicationID string, sourceType source.Type, sou
 	return res, nil
 }
 
+// Verify re-runs post-install verification for the given application using the
+// recorded source details without reinstalling. It selects the appropriate
+// adapter and calls its Verify method with a minimal plan.
+func (e *DefaultEngine) Verify(applicationID string, sourceType source.Type, sourceIdentifier string) (*Result, error) {
+	start := time.Now()
+	if applicationID == "" {
+		return nil, errors.New("applicationID must not be empty")
+	}
+	if sourceType == "" {
+		return nil, errors.New("sourceType must not be empty")
+	}
+	if sourceIdentifier == "" {
+		return nil, errors.New("sourceIdentifier must not be empty")
+	}
+
+	e.emit(EventStarted, applicationID, fmt.Sprintf("Verifying %s", applicationID))
+
+	a := e.selectRemovalAdapter(sourceType)
+	if a == nil {
+		msg := fmt.Sprintf("no available adapter for source type %s", sourceType)
+		e.emit(EventFailed, applicationID, msg)
+		res := &Result{
+			Success:       false,
+			ApplicationID: applicationID,
+			Message:       msg,
+			ErrorCategory: adapter.ErrBackendUnavailable,
+		}
+		e.emitLog(logging.Entry{
+			Action:        logging.ActionVerify,
+			ApplicationID: applicationID,
+			SourceType:    sourceType,
+			Result:        "failure",
+			Duration:      time.Since(start),
+			ErrorCategory: res.ErrorCategory,
+		})
+		return res, nil
+	}
+
+	e.emit(EventVerifying, applicationID, fmt.Sprintf("Running verification for %s via %s", applicationID, a.Name()))
+
+	plan := &install.Plan{
+		ApplicationID:    applicationID,
+		SourceType:       sourceType,
+		SourceIdentifier: sourceIdentifier,
+		Verification:     []install.VerificationRule{{Command: sourceIdentifier}},
+	}
+
+	vr, err := a.Verify(plan)
+	if err != nil {
+		msg := fmt.Sprintf("Verification error: %s", err.Error())
+		e.emit(EventFailed, applicationID, msg)
+		res := &Result{
+			Success:       false,
+			ApplicationID: applicationID,
+			Message:       msg,
+			ErrorCategory: adapter.ErrExecutionFailed,
+		}
+		e.emitLog(logging.Entry{
+			Action:             logging.ActionVerify,
+			ApplicationID:      applicationID,
+			SourceType:         sourceType,
+			Result:             "failure",
+			Duration:           time.Since(start),
+			VerificationStatus: "error",
+			ErrorCategory:      adapter.ErrExecutionFailed,
+		})
+		return res, nil
+	}
+
+	if !vr.Verified {
+		msg := fmt.Sprintf("Verification failed: %s", vr.Details)
+		e.emit(EventFailed, applicationID, msg)
+		res := &Result{
+			Success:       false,
+			ApplicationID: applicationID,
+			Message:       msg,
+			ErrorCategory: "verification_failed",
+		}
+		e.emitLog(logging.Entry{
+			Action:             logging.ActionVerify,
+			ApplicationID:      applicationID,
+			SourceType:         sourceType,
+			Result:             "failure",
+			Duration:           time.Since(start),
+			VerificationStatus: "failed",
+			ErrorCategory:      "verification_failed",
+		})
+		return res, nil
+	}
+
+	msg := fmt.Sprintf("%s is correctly installed and verified", applicationID)
+	e.emit(EventCompleted, applicationID, msg)
+	e.emitLog(logging.Entry{
+		Action:             logging.ActionVerify,
+		ApplicationID:      applicationID,
+		SourceType:         sourceType,
+		Result:             "success",
+		Duration:           time.Since(start),
+		VerificationStatus: "verified",
+	})
+	return &Result{
+		Success:       true,
+		ApplicationID: applicationID,
+		Message:       msg,
+	}, nil
+}
+
 // selectAdapter returns the first available adapter that can handle the source
 // type specified in the plan.
 func (e *DefaultEngine) selectAdapter(plan *install.Plan) (adapter.Adapter, error) {
