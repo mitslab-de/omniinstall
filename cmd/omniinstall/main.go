@@ -102,11 +102,33 @@ func run(args []string) error {
 		}
 		return app.search(query)
 	case "install":
+		jsonOutput, positional, err := parseInstallFlags(args[1:])
+		if err != nil {
+			return err
+		}
+		dryRun := false
 		appID := ""
-		if len(args) > 1 {
-			appID = args[1]
+		remaining := make([]string, 0, len(positional))
+		for _, a := range positional {
+			if a == "--dry-run" {
+				dryRun = true
+				continue
+			}
+			remaining = append(remaining, a)
+		}
+		if len(remaining) > 1 {
+			return errors.New("usage: omniinstall install <application> [--dry-run] [--json]")
+		}
+		if len(remaining) == 1 {
+			appID = remaining[0]
 		}
 		app := newApp(os.Stdout)
+		if dryRun {
+			if jsonOutput {
+				return app.installDryRunJSON(appID)
+			}
+			return app.installDryRun(appID)
+		}
 		return app.install(appID)
 	case "remove":
 		appID := ""
@@ -167,7 +189,7 @@ Usage:
 
 Commands:
   search <query>    Search for an application (use --json for machine output)
-  install <app>     Install an application
+  install <app>     Install an application (use --dry-run to preview, --json for machine output)
   remove <app>      Remove an application
   verify <app>      Re-run verification for an installed application
   explain <app>     Show why a source was selected for an application (use --json for machine output)
@@ -194,4 +216,11 @@ func parseJSONFlag(args []string) (bool, []string, error) {
 	}
 
 	return jsonOutput, positional, nil
+}
+
+// parseInstallFlags parses the --json flag from install command arguments,
+// leaving all other arguments (including --dry-run) as positional for further
+// processing by the caller.
+func parseInstallFlags(args []string) (jsonOutput bool, positional []string, err error) {
+	return parseJSONFlag(args)
 }

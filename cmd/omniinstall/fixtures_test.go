@@ -169,6 +169,10 @@ func (f *CLIFixture) run(cmd string, args ...string) error {
 		return a.search(arg0)
 	case "install":
 		return a.install(arg0)
+	case "install-dry-run":
+		return a.installDryRun(arg0)
+	case "install-dry-run-json":
+		return a.installDryRunJSON(arg0)
 	case "remove":
 		return a.remove(arg0)
 	case "verify":

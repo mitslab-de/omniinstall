@@ -73,6 +73,16 @@ type explainJSONOutput struct {
 	Conflicts              []explainJSONConflict    `json:"conflicts"`
 }
 
+type installDryRunJSONOutput struct {
+	ApplicationID    string           `json:"application_id"`
+	DisplayName      string           `json:"display_name"`
+	Adapter          source.Type      `json:"adapter"`
+	PackageID        string           `json:"package_id"`
+	RiskLevel        source.RiskLevel `json:"risk_level"`
+	RequiresPrivilege bool            `json:"requires_privilege,omitempty"`
+	Explanation      string           `json:"explanation,omitempty"`
+}
+
 type listJSONApplication struct {
 	ApplicationID string              `json:"application_id"`
 	SourceType    source.Type         `json:"source_type"`
@@ -263,7 +273,93 @@ func (a *App) install(appID string) error {
 	return nil
 }
 
-// verify handles `omni verify <app>`.
+// installDryRun handles `omni install <app> --dry-run`.
+//
+// It resolves the best source for the application and prints what would be
+// installed (adapter, package identifier, risk level) without executing the
+// installation.
+func (a *App) installDryRun(appID string) error {
+	if appID == "" {
+		return errors.New("usage: omni install <application> --dry-run")
+	}
+
+	candidates, err := a.discovery.Search(appID)
+	if err != nil {
+		return fmt.Errorf("discovery failed: %w", err)
+	}
+	if len(candidates) == 0 {
+		return fmt.Errorf("application %q not found", appID)
+	}
+	app := candidates[0].Application
+	resolvedID := app.ID
+
+	srcs, ok := a.sources[resolvedID]
+	if !ok || len(srcs) == 0 {
+		return fmt.Errorf("no sources available for %q", resolvedID)
+	}
+
+	recs, err := a.resolver.Resolve(resolvedID, srcs, a.ctx)
+	if err != nil {
+		return fmt.Errorf("source resolution failed: %w", err)
+	}
+	if len(recs) == 0 {
+		return fmt.Errorf("no compatible source found for %q on this system", resolvedID)
+	}
+
+	rec := recs[0]
+	fmt.Fprintf(a.out, "Dry-run: would install %s\n", app.DisplayName)
+	fmt.Fprintf(a.out, "  Adapter:    %s\n", rec.Plan.SourceType)
+	fmt.Fprintf(a.out, "  Package ID: %s\n", rec.Plan.SourceIdentifier)
+	fmt.Fprintf(a.out, "  Risk level: %s\n", rec.Plan.RiskLevel)
+	if rec.Plan.RequiresPrivilege {
+		fmt.Fprintf(a.out, "  Requires elevated privileges: yes\n")
+	}
+	fmt.Fprintf(a.out, "  Reason: %s\n", rec.Explanation)
+	fmt.Fprintf(a.out, "\nNo changes were made (dry-run).\n")
+	return nil
+}
+
+// installDryRunJSON handles `omni install <app> --dry-run --json`.
+func (a *App) installDryRunJSON(appID string) error {
+	if appID == "" {
+		return errors.New("usage: omni install <application> --dry-run --json")
+	}
+
+	candidates, err := a.discovery.Search(appID)
+	if err != nil {
+		return fmt.Errorf("discovery failed: %w", err)
+	}
+	if len(candidates) == 0 {
+		return fmt.Errorf("application %q not found", appID)
+	}
+	app := candidates[0].Application
+	resolvedID := app.ID
+
+	srcs, ok := a.sources[resolvedID]
+	if !ok || len(srcs) == 0 {
+		return fmt.Errorf("no sources available for %q", resolvedID)
+	}
+
+	recs, err := a.resolver.Resolve(resolvedID, srcs, a.ctx)
+	if err != nil {
+		return fmt.Errorf("source resolution failed: %w", err)
+	}
+	if len(recs) == 0 {
+		return fmt.Errorf("no compatible source found for %q on this system", resolvedID)
+	}
+
+	rec := recs[0]
+	out := installDryRunJSONOutput{
+		ApplicationID:     resolvedID,
+		DisplayName:       app.DisplayName,
+		Adapter:           rec.Plan.SourceType,
+		PackageID:         rec.Plan.SourceIdentifier,
+		RiskLevel:         rec.Plan.RiskLevel,
+		RequiresPrivilege: rec.Plan.RequiresPrivilege,
+		Explanation:       rec.Explanation,
+	}
+	return writeJSON(a.out, out)
+}
 //
 // It re-runs post-install verification for an already-installed application
 // without reinstalling it, and updates the verification status in local state.

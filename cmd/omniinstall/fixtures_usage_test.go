@@ -95,3 +95,65 @@ func TestFixture_RemovedApp_ShowsInList(t *testing.T) {
 	// the key requirement is no error is returned.
 	_ = out
 }
+
+// ---------------------------------------------------------------------------
+// Dry-run output enrichment tests (task 0037)
+// ---------------------------------------------------------------------------
+
+func TestFixture_InstallDryRun_ShowsAdapterAndPackageID(t *testing.T) {
+f := newFixture(t).withAPT()
+out := f.mustRun(t, "install-dry-run", "git")
+for _, want := range []string{"Dry-run:", "git", "apt", "git", "No changes were made"} {
+if !strings.Contains(out, want) {
+t.Errorf("dry-run output missing %q\ngot: %s", want, out)
+}
+}
+}
+
+func TestFixture_InstallDryRun_ShowsRiskLevel(t *testing.T) {
+f := newFixture(t).withAPT()
+out := f.mustRun(t, "install-dry-run", "git")
+if !strings.Contains(out, "Risk level:") {
+t.Errorf("dry-run output missing 'Risk level:'\ngot: %s", out)
+}
+}
+
+func TestFixture_InstallDryRun_NoStateChange(t *testing.T) {
+f := newFixture(t).withAPT()
+f.mustRun(t, "install-dry-run", "git")
+// After dry-run, the app should NOT appear in list as installed.
+f.resetOutput()
+listOut := f.mustRun(t, "list")
+if strings.Contains(listOut, "git") {
+t.Errorf("dry-run should not record state; list unexpectedly showed 'git': %s", listOut)
+}
+}
+
+func TestFixture_InstallDryRun_EmptyAppID_ReturnsError(t *testing.T) {
+f := newFixture(t).withAPT()
+err := f.runExpectError(t, "install-dry-run", "")
+if err == nil {
+t.Fatal("expected error for empty application ID")
+}
+}
+
+func TestFixture_InstallDryRunJSON_ContainsRequiredFields(t *testing.T) {
+f := newFixture(t).withAPT()
+out := f.mustRun(t, "install-dry-run-json", "git")
+for _, field := range []string{`"adapter"`, `"package_id"`, `"risk_level"`} {
+if !strings.Contains(out, field) {
+t.Errorf("dry-run JSON output missing field %q\ngot: %s", field, out)
+}
+}
+}
+
+func TestFixture_InstallDryRunJSON_NoActualInstall(t *testing.T) {
+f := newFixture(t).withAPT()
+f.mustRun(t, "install-dry-run-json", "git")
+// State should be empty after JSON dry-run.
+f.resetOutput()
+listOut := f.mustRun(t, "list")
+if strings.Contains(listOut, "git") {
+t.Errorf("dry-run JSON should not record state; list unexpectedly showed 'git': %s", listOut)
+}
+}
