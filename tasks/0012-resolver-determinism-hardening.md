@@ -1,6 +1,6 @@
 # Task 0012 - Resolver Determinism Hardening
 
-Status: Open
+Status: Done
 Priority: P1
 
 ## Goal
@@ -23,3 +23,12 @@ Strengthen deterministic resolver behavior for tie-break scenarios and manager-a
 
 - specs/05-RESOLVER_RULES.md
 - docs/architecture/03-SOURCE_RESOLVER.md
+
+## Completion Notes
+
+- Hardened deterministic tie-breaking in `internal/resolver/default_resolver.go` by ordering equal-score candidates by `SourceIdentifier` and then `SourceType`.
+- Added deterministic coverage in `internal/resolver/default_resolver_test.go` for:
+  - equal-score sources with identical source identifiers but different source types
+  - stable recommendation ordering when available manager list order is permuted
+- Preserved existing preference behavior (`PreferFlatpak`) while making tie handling independent of input ordering.
+- Verified with `go test ./...` and `go test ./... -race`.

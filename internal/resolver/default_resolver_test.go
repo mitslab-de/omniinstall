@@ -284,6 +284,67 @@ func TestDefaultResolverEmptySources(t *testing.T) {
 	}
 }
 
+func TestDefaultResolverDeterministicWithEqualScoreSources(t *testing.T) {
+	r := resolver.NewDefaultResolver()
+	apt := source.Source{
+		ApplicationID:    "equal-app",
+		SourceType:       source.TypeAPT,
+		SourceIdentifier: "equal-app",
+		TrustLevel:       source.TrustOfficial,
+		RiskLevel:        source.RiskLow,
+	}
+	dnf := source.Source{
+		ApplicationID:    "equal-app",
+		SourceType:       source.TypeDNF,
+		SourceIdentifier: "equal-app",
+		TrustLevel:       source.TrustOfficial,
+		RiskLevel:        source.RiskLow,
+	}
+	ctx := resolver.SystemContext{
+		AvailableManagers: []source.Type{source.TypeDNF, source.TypeAPT},
+	}
+
+	first, err := r.Resolve("equal-app", []source.Source{dnf, apt}, ctx)
+	if err != nil {
+		t.Fatalf("first resolve error: %v", err)
+	}
+	second, err := r.Resolve("equal-app", []source.Source{apt, dnf}, ctx)
+	if err != nil {
+		t.Fatalf("second resolve error: %v", err)
+	}
+	if len(first) != 2 || len(second) != 2 {
+		t.Fatalf("expected 2 recommendations in both runs, got %d and %d", len(first), len(second))
+	}
+	if first[0].Plan.SourceType != source.TypeAPT || second[0].Plan.SourceType != source.TypeAPT {
+		t.Fatalf("expected deterministic APT-first tie break, got %s and %s", first[0].Plan.SourceType, second[0].Plan.SourceType)
+	}
+}
+
+func TestDefaultResolverDeterministicAcrossManagerOrder(t *testing.T) {
+	r := resolver.NewDefaultResolver()
+	sources := []source.Source{flatpakSource, aptSource, snapSource}
+
+	ctx1 := resolver.SystemContext{AvailableManagers: []source.Type{source.TypeAPT, source.TypeFlatpak, source.TypeSnap}}
+	ctx2 := resolver.SystemContext{AvailableManagers: []source.Type{source.TypeSnap, source.TypeAPT, source.TypeFlatpak}}
+
+	recs1, err := r.Resolve("test-app", sources, ctx1)
+	if err != nil {
+		t.Fatalf("first resolve error: %v", err)
+	}
+	recs2, err := r.Resolve("test-app", sources, ctx2)
+	if err != nil {
+		t.Fatalf("second resolve error: %v", err)
+	}
+	if len(recs1) != len(recs2) {
+		t.Fatalf("expected same recommendation count, got %d and %d", len(recs1), len(recs2))
+	}
+	for i := range recs1 {
+		if recs1[i].Plan.SourceType != recs2[i].Plan.SourceType {
+			t.Fatalf("expected same source order, index %d differs: %s vs %s", i, recs1[i].Plan.SourceType, recs2[i].Plan.SourceType)
+		}
+	}
+}
+
 func TestDefaultResolverImplementsInterface(t *testing.T) {
 	var _ resolver.Resolver = resolver.NewDefaultResolver()
 }

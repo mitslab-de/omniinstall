@@ -45,12 +45,16 @@ func (r *DefaultResolver) Resolve(
 		candidates = append(candidates, scored{src: s, score: sc})
 	}
 
-	// Sort descending by score; ties broken by SourceIdentifier for determinism.
+	// Sort descending by score; ties broken by SourceIdentifier and then
+	// SourceType for determinism independent of input ordering.
 	sort.SliceStable(candidates, func(i, j int) bool {
 		if candidates[i].score != candidates[j].score {
 			return candidates[i].score > candidates[j].score
 		}
-		return candidates[i].src.SourceIdentifier < candidates[j].src.SourceIdentifier
+		if candidates[i].src.SourceIdentifier != candidates[j].src.SourceIdentifier {
+			return candidates[i].src.SourceIdentifier < candidates[j].src.SourceIdentifier
+		}
+		return candidates[i].src.SourceType < candidates[j].src.SourceType
 	})
 
 	recommendations := make([]Recommendation, 0, len(candidates))
