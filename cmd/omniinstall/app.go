@@ -53,8 +53,9 @@ type explainJSONAlternative struct {
 }
 
 type explainJSONConflict struct {
-	Kind    resolver.ConflictKind `json:"kind"`
-	Message string                `json:"message"`
+	Kind       resolver.ConflictKind `json:"kind"`
+	Message    string                `json:"message"`
+	Suggestion string                `json:"suggestion,omitempty"`
 }
 
 type explainJSONOutput struct {
@@ -207,6 +208,16 @@ func (a *App) install(appID string) error {
 		return fmt.Errorf("source resolution failed: %w", err)
 	}
 	if len(recs) == 0 {
+		conflicts := resolver.DetectConflicts(srcs, a.ctx)
+		if len(conflicts) > 0 {
+			fmt.Fprintf(a.out, "Cannot install %q: no compatible source found.\n", resolvedID)
+			for _, c := range conflicts {
+				fmt.Fprintf(a.out, "  - %s\n", c.Message)
+				if c.Suggestion != "" {
+					fmt.Fprintf(a.out, "    Next step: %s\n", c.Suggestion)
+				}
+			}
+		}
 		return fmt.Errorf("no compatible source found for %q on this system", resolvedID)
 	}
 
@@ -309,6 +320,16 @@ func (a *App) explain(appID string) error {
 
 	if len(recs) == 0 {
 		fmt.Fprintf(a.out, "  No compatible source found on this system.\n")
+		conflicts := resolver.DetectConflicts(srcs, a.ctx)
+		if len(conflicts) > 0 {
+			fmt.Fprintf(a.out, "\n  Reasons:\n")
+			for _, c := range conflicts {
+				fmt.Fprintf(a.out, "    - %s\n", c.Message)
+				if c.Suggestion != "" {
+					fmt.Fprintf(a.out, "      Next step: %s\n", c.Suggestion)
+				}
+			}
+		}
 		return nil
 	}
 
@@ -395,8 +416,9 @@ func (a *App) explainJSON(appID string) error {
 	conflicts := resolver.DetectConflicts(srcs, a.ctx)
 	for _, c := range conflicts {
 		out.Conflicts = append(out.Conflicts, explainJSONConflict{
-			Kind:    c.Kind,
-			Message: c.Message,
+			Kind:       c.Kind,
+			Message:    c.Message,
+			Suggestion: c.Suggestion,
 		})
 	}
 

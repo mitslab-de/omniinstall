@@ -578,3 +578,48 @@ if !strings.Contains(out, "risk") {
 t.Errorf("expected resolver explanation to mention risk, got:\n%s", out)
 }
 }
+
+func TestAppExplain_NoCompatibleSourceShowsReasons(t *testing.T) {
+buf := &strings.Builder{}
+// git only has an APT source; Flatpak-only managers → no compatible source.
+app := newAppWithStore(buf, newMockStore(), flatpakManagers())
+if err := app.explain("git"); err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+out := buf.String()
+if !strings.Contains(out, "No compatible source") {
+t.Errorf("expected 'No compatible source' message, got:\n%s", out)
+}
+if !strings.Contains(out, "Reasons:") {
+t.Errorf("expected 'Reasons:' section when no sources are compatible, got:\n%s", out)
+}
+if !strings.Contains(out, "Next step:") {
+t.Errorf("expected 'Next step:' suggestion, got:\n%s", out)
+}
+}
+
+func TestAppExplain_JSONNoCompatibleSourceIncludesSuggestion(t *testing.T) {
+buf := &strings.Builder{}
+// git only has an APT source; Flatpak-only managers → no compatible source.
+app := newAppWithStore(buf, newMockStore(), flatpakManagers())
+if err := app.explainJSON("git"); err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+var out struct {
+Conflicts []struct {
+Kind       string `json:"kind"`
+Suggestion string `json:"suggestion"`
+} `json:"conflicts"`
+}
+if err := json.Unmarshal([]byte(buf.String()), &out); err != nil {
+t.Fatalf("invalid JSON: %v\noutput: %s", err, buf.String())
+}
+if len(out.Conflicts) == 0 {
+t.Fatalf("expected conflicts in JSON output, got none\nfull output: %s", buf.String())
+}
+for _, c := range out.Conflicts {
+if c.Suggestion == "" {
+t.Errorf("expected suggestion for conflict kind %q, got empty", c.Kind)
+}
+}
+}
