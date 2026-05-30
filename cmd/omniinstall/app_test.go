@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -136,6 +137,29 @@ func TestAppSearch_EmptyQuery(t *testing.T) {
 	app := newAppWithStore(buf, newMockStore(), aptManagers())
 	if err := app.search(""); err == nil {
 		t.Error("expected error for empty search query")
+	}
+}
+
+func TestAppSearch_JSONFound(t *testing.T) {
+	buf := &strings.Builder{}
+	app := newAppWithStore(buf, newMockStore(), aptManagers())
+	if err := app.searchJSON("obs"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var out struct {
+		Query   string `json:"query"`
+		Results []struct {
+			ApplicationID string `json:"application_id"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(buf.String()), &out); err != nil {
+		t.Fatalf("expected valid json output, got error: %v", err)
+	}
+	if out.Query != "obs" {
+		t.Fatalf("expected query obs, got %q", out.Query)
+	}
+	if len(out.Results) == 0 || out.Results[0].ApplicationID == "" {
+		t.Fatalf("expected at least one json result, got %+v", out.Results)
 	}
 }
 
@@ -363,6 +387,27 @@ func TestAppExplain_EmptyAppID(t *testing.T) {
 	}
 }
 
+func TestAppExplain_JSONFound(t *testing.T) {
+	buf := &strings.Builder{}
+	app := newAppWithStore(buf, newMockStore(), aptManagers())
+	if err := app.explainJSON("obs-studio"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var out struct {
+		ApplicationID         string `json:"application_id"`
+		RecommendedSourceType string `json:"recommended_source_type"`
+	}
+	if err := json.Unmarshal([]byte(buf.String()), &out); err != nil {
+		t.Fatalf("expected valid json output, got error: %v", err)
+	}
+	if out.ApplicationID != "obs-studio" {
+		t.Fatalf("expected application_id obs-studio, got %q", out.ApplicationID)
+	}
+	if out.RecommendedSourceType == "" {
+		t.Fatal("expected recommended source type to be set")
+	}
+}
+
 func TestAppList_Empty(t *testing.T) {
 	buf := &strings.Builder{}
 	app := newAppWithStore(buf, newMockStore(), aptManagers())
@@ -411,5 +456,33 @@ func TestAppList_HidesRemoved(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "vlc") {
 		t.Errorf("removed app should not appear in list, got:\n%s", buf.String())
+	}
+}
+
+func TestAppList_JSONOutput(t *testing.T) {
+	buf := &strings.Builder{}
+	store := newMockStore()
+	_ = store.Record(state.LocalInstallation{
+		ApplicationID:      "git",
+		SourceType:         source.TypeAPT,
+		SourceIdentifier:   "git",
+		InstallTimestamp:   time.Now(),
+		InstallStatus:      state.StatusInstalled,
+		VerificationStatus: state.VerificationPassed,
+	})
+	app := newAppWithStore(buf, store, aptManagers())
+	if err := app.listJSON(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var out struct {
+		Applications []struct {
+			ApplicationID string `json:"application_id"`
+		} `json:"applications"`
+	}
+	if err := json.Unmarshal([]byte(buf.String()), &out); err != nil {
+		t.Fatalf("expected valid json output, got error: %v", err)
+	}
+	if len(out.Applications) != 1 || out.Applications[0].ApplicationID != "git" {
+		t.Fatalf("unexpected applications payload: %+v", out.Applications)
 	}
 }

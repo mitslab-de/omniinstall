@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -32,6 +33,47 @@ type App struct {
 	ctx       resolver.SystemContext
 	in        io.Reader
 	out       io.Writer
+}
+
+type searchJSONResult struct {
+	ApplicationID string `json:"application_id"`
+	DisplayName   string `json:"display_name"`
+	Summary       string `json:"summary"`
+	MatchScore    int    `json:"match_score"`
+}
+
+type searchJSONOutput struct {
+	Query   string             `json:"query"`
+	Results []searchJSONResult `json:"results"`
+}
+
+type explainJSONAlternative struct {
+	SourceType  source.Type `json:"source_type"`
+	Explanation string      `json:"explanation"`
+}
+
+type explainJSONConflict struct {
+	Kind    resolver.ConflictKind `json:"kind"`
+	Message string                `json:"message"`
+}
+
+type explainJSONOutput struct {
+	ApplicationID          string                   `json:"application_id"`
+	DisplayName            string                   `json:"display_name"`
+	RecommendedSourceType  source.Type              `json:"recommended_source_type"`
+	RecommendedExplanation string                   `json:"recommended_explanation"`
+	Alternatives           []explainJSONAlternative `json:"alternatives"`
+	Conflicts              []explainJSONConflict    `json:"conflicts"`
+}
+
+type listJSONApplication struct {
+	ApplicationID string              `json:"application_id"`
+	SourceType    source.Type         `json:"source_type"`
+	Status        state.InstallStatus `json:"status"`
+}
+
+type listJSONOutput struct {
+	Applications []listJSONApplication `json:"applications"`
 }
 
 // newApp creates a production App, detecting available package managers and
@@ -92,6 +134,7 @@ func (a *App) search(query string) error {
 	if query == "" {
 		return errors.New("usage: omni search <query>")
 	}
+
 	candidates, err := a.discovery.Search(query)
 	if err != nil {
 		return fmt.Errorf("search failed: %w", err)
@@ -105,6 +148,31 @@ func (a *App) search(query string) error {
 		fmt.Fprintf(a.out, "  %-25s %s\n", c.Application.ID, c.Application.Summary)
 	}
 	return nil
+}
+
+func (a *App) searchJSON(query string) error {
+	if query == "" {
+		return errors.New("usage: omni search <query>")
+	}
+
+	candidates, err := a.discovery.Search(query)
+	if err != nil {
+		return fmt.Errorf("search failed: %w", err)
+	}
+
+	out := searchJSONOutput{
+		Query:   query,
+		Results: make([]searchJSONResult, 0, len(candidates)),
+	}
+	for _, c := range candidates {
+		out.Results = append(out.Results, searchJSONResult{
+			ApplicationID: c.Application.ID,
+			DisplayName:   c.Application.DisplayName,
+			Summary:       c.Application.Summary,
+			MatchScore:    c.MatchScore,
+		})
+	}
+	return writeJSON(a.out, out)
 }
 
 // install handles `omni install <app>`.
@@ -262,6 +330,62 @@ func (a *App) explain(appID string) error {
 	return nil
 }
 
+func (a *App) explainJSON(appID string) error {
+	if appID == "" {
+		return errors.New("usage: omni explain <application>")
+	}
+
+	candidates, err := a.discovery.Search(appID)
+	if err != nil {
+		return fmt.Errorf("discovery failed: %w", err)
+	}
+	if len(candidates) == 0 {
+		return fmt.Errorf("application %q not found", appID)
+	}
+	app := candidates[0].Application
+	resolvedID := app.ID
+
+	srcs, ok := a.sources[resolvedID]
+	if !ok {
+		srcs = nil
+	}
+
+	recs, err := a.resolver.Resolve(resolvedID, srcs, a.ctx)
+	if err != nil {
+		return fmt.Errorf("source resolution failed: %w", err)
+	}
+
+	out := explainJSONOutput{
+		ApplicationID: resolvedID,
+		DisplayName:   app.DisplayName,
+		Alternatives:  []explainJSONAlternative{},
+		Conflicts:     []explainJSONConflict{},
+	}
+
+	if len(recs) > 0 && recs[0].Plan != nil {
+		out.RecommendedSourceType = recs[0].Plan.SourceType
+		out.RecommendedExplanation = recs[0].Explanation
+	}
+	if len(recs) > 1 {
+		for _, alt := range recs[1:] {
+			out.Alternatives = append(out.Alternatives, explainJSONAlternative{
+				SourceType:  alt.Plan.SourceType,
+				Explanation: alt.Explanation,
+			})
+		}
+	}
+
+	conflicts := resolver.DetectConflicts(srcs, a.ctx)
+	for _, c := range conflicts {
+		out.Conflicts = append(out.Conflicts, explainJSONConflict{
+			Kind:    c.Kind,
+			Message: c.Message,
+		})
+	}
+
+	return writeJSON(a.out, out)
+}
+
 // list handles `omni list`.
 func (a *App) list() error {
 	records, err := a.store.List()
@@ -297,6 +421,34 @@ func (a *App) list() error {
 		)
 	}
 	return nil
+}
+
+func (a *App) listJSON() error {
+	records, err := a.store.List()
+	if err != nil {
+		return fmt.Errorf("could not read local state: %w", err)
+	}
+
+	active := make([]state.LocalInstallation, 0, len(records))
+	for _, r := range records {
+		if r.InstallStatus != state.StatusRemoved {
+			active = append(active, r)
+		}
+	}
+
+	sort.Slice(active, func(i, j int) bool {
+		return active[i].ApplicationID < active[j].ApplicationID
+	})
+
+	out := listJSONOutput{Applications: make([]listJSONApplication, 0, len(active))}
+	for _, r := range active {
+		out.Applications = append(out.Applications, listJSONApplication{
+			ApplicationID: r.ApplicationID,
+			SourceType:    r.SourceType,
+			Status:        r.InstallStatus,
+		})
+	}
+	return writeJSON(a.out, out)
 }
 
 // handleProgress prints progress events to the output writer.
@@ -378,3 +530,9 @@ func newAppForTest(out io.Writer, eng *engine.DefaultEngine, store state.Store, 
 
 // Ensure App uses os.Stdout for the production path.
 var _ = os.Stdout
+
+func writeJSON(out io.Writer, v any) error {
+	enc := json.NewEncoder(out)
+	enc.SetEscapeHTML(false)
+	return enc.Encode(v)
+}

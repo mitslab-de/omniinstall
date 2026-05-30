@@ -55,6 +55,28 @@ func TestRunCLI_UsageExitCode(t *testing.T) {
 	}
 }
 
+func TestRun_SearchJSONMode(t *testing.T) {
+	if err := run([]string{"search", "obs", "--json"}); err != nil {
+		t.Fatalf("expected no error for search --json, got: %v", err)
+	}
+}
+
+func TestRun_ListJSONMode(t *testing.T) {
+	if err := run([]string{"list", "--json"}); err != nil {
+		t.Fatalf("expected no error for list --json, got: %v", err)
+	}
+}
+
+func TestRun_RejectsDuplicateJSONFlag(t *testing.T) {
+	err := run([]string{"list", "--json", "--json"})
+	if err == nil {
+		t.Fatal("expected usage error for duplicate --json")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "usage:") {
+		t.Fatalf("expected usage error, got %v", err)
+	}
+}
+
 func TestRunCLI_NotFoundExitCode(t *testing.T) {
 	if code := runCLI([]string{"install", "definitely-not-a-real-app"}); code != ExitCodeNotFound {
 		t.Fatalf("expected not-found exit code %d, got %d", ExitCodeNotFound, code)

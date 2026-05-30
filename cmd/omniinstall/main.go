@@ -19,6 +19,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -83,11 +84,22 @@ func run(args []string) error {
 		printUsage()
 		return nil
 	case "search":
-		query := ""
-		if len(args) > 1 {
-			query = args[1]
+		jsonOutput, positional, err := parseJSONFlag(args[1:])
+		if err != nil {
+			return err
 		}
+		if len(positional) > 1 {
+			return errors.New("usage: omniinstall search <query> [--json]")
+		}
+		query := ""
+		if len(positional) == 1 {
+			query = positional[0]
+		}
+
 		app := newApp(os.Stdout)
+		if jsonOutput {
+			return app.searchJSON(query)
+		}
 		return app.search(query)
 	case "install":
 		appID := ""
@@ -104,14 +116,36 @@ func run(args []string) error {
 		app := newApp(os.Stdout)
 		return app.remove(appID)
 	case "explain":
-		appID := ""
-		if len(args) > 1 {
-			appID = args[1]
+		jsonOutput, positional, err := parseJSONFlag(args[1:])
+		if err != nil {
+			return err
 		}
+		if len(positional) > 1 {
+			return errors.New("usage: omniinstall explain <application> [--json]")
+		}
+		appID := ""
+		if len(positional) == 1 {
+			appID = positional[0]
+		}
+
 		app := newApp(os.Stdout)
+		if jsonOutput {
+			return app.explainJSON(appID)
+		}
 		return app.explain(appID)
 	case "list":
+		jsonOutput, positional, err := parseJSONFlag(args[1:])
+		if err != nil {
+			return err
+		}
+		if len(positional) > 0 {
+			return errors.New("usage: omniinstall list [--json]")
+		}
+
 		app := newApp(os.Stdout)
+		if jsonOutput {
+			return app.listJSON()
+		}
 		return app.list()
 	default:
 		return fmt.Errorf("unknown command %q — run 'omniinstall help' for usage", args[0])
@@ -125,13 +159,31 @@ Usage:
   omniinstall <command> [arguments]
 
 Commands:
-  search <query>    Search for an application
+  search <query>    Search for an application (use --json for machine output)
   install <app>     Install an application
   remove <app>      Remove an application
-  explain <app>     Show why a source was selected for an application
-  list              List installed applications
+  explain <app>     Show why a source was selected for an application (use --json for machine output)
+  list              List installed applications (use --json for machine output)
   version           Show version information
 
 Run 'omniinstall help' for more information.
 `)
+}
+
+func parseJSONFlag(args []string) (bool, []string, error) {
+	jsonOutput := false
+	positional := make([]string, 0, len(args))
+
+	for _, arg := range args {
+		if arg == "--json" {
+			if jsonOutput {
+				return false, nil, errors.New("usage: duplicate --json flag")
+			}
+			jsonOutput = true
+			continue
+		}
+		positional = append(positional, arg)
+	}
+
+	return jsonOutput, positional, nil
 }
