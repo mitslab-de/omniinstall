@@ -182,122 +182,122 @@ func TestFileStoreStateFileContainsSchemaVersion(t *testing.T) {
 		t.Fatalf("Record failed: %v", err)
 	}
 
-	func TestFileStoreReadsLegacyStateWithoutSchemaVersion(t *testing.T) {
-		dir := t.TempDir()
-		path := filepath.Join(dir, "state.json")
-
-		legacy := map[string]interface{}{
-			"installations": map[string]state.LocalInstallation{
-				"obs-studio": sampleRecord(),
-			},
-		}
-		data, err := json.Marshal(legacy)
-		if err != nil {
-			t.Fatalf("json.Marshal legacy state failed: %v", err)
-		}
-		if err := os.WriteFile(path, data, 0o600); err != nil {
-			t.Fatalf("writing legacy state file: %v", err)
-		}
-
-		s := state.NewFileStore(path)
-		got, found, err := s.Get("obs-studio")
-		if err != nil {
-			t.Fatalf("expected legacy state load to succeed, got error: %v", err)
-		}
-		if !found {
-			t.Fatal("expected record to be found in legacy state")
-		}
-		if got.ApplicationID != "obs-studio" {
-			t.Errorf("expected ApplicationID obs-studio, got %q", got.ApplicationID)
-		}
-	}
-
-	func TestFileStoreReadsCompatibleSchemaMinorVersion(t *testing.T) {
-		dir := t.TempDir()
-		path := filepath.Join(dir, "state.json")
-
-		versioned := map[string]interface{}{
-			"schema_version": "1.5",
-			"installations": map[string]state.LocalInstallation{
-				"obs-studio": sampleRecord(),
-			},
-		}
-		data, err := json.Marshal(versioned)
-		if err != nil {
-			t.Fatalf("json.Marshal versioned state failed: %v", err)
-		}
-		if err := os.WriteFile(path, data, 0o600); err != nil {
-			t.Fatalf("writing versioned state file: %v", err)
-		}
-
-		s := state.NewFileStore(path)
-		_, found, err := s.Get("obs-studio")
-		if err != nil {
-			t.Fatalf("expected compatible schema version to load, got error: %v", err)
-		}
-		if !found {
-			t.Fatal("expected record to be found for compatible schema version")
-		}
-	}
-
-	func TestFileStoreRejectsUnsupportedSchemaMajorVersion(t *testing.T) {
-		dir := t.TempDir()
-		path := filepath.Join(dir, "state.json")
-
-		versioned := map[string]interface{}{
-			"schema_version": "2.0",
-			"installations":  map[string]state.LocalInstallation{},
-		}
-		data, err := json.Marshal(versioned)
-		if err != nil {
-			t.Fatalf("json.Marshal versioned state failed: %v", err)
-		}
-		if err := os.WriteFile(path, data, 0o600); err != nil {
-			t.Fatalf("writing versioned state file: %v", err)
-		}
-
-		s := state.NewFileStore(path)
-		_, err = s.List()
-		if err == nil {
-			t.Fatal("expected error for unsupported schema major version, got nil")
-		}
-		if !strings.Contains(err.Error(), "unsupported schema_version") {
-			t.Fatalf("expected unsupported schema_version error, got: %v", err)
-		}
-	}
-
-	func TestFileStoreRejectsInvalidSchemaVersionFormat(t *testing.T) {
-		dir := t.TempDir()
-		path := filepath.Join(dir, "state.json")
-
-		versioned := map[string]interface{}{
-			"schema_version": "v1",
-			"installations":  map[string]state.LocalInstallation{},
-		}
-		data, err := json.Marshal(versioned)
-		if err != nil {
-			t.Fatalf("json.Marshal versioned state failed: %v", err)
-		}
-		if err := os.WriteFile(path, data, 0o600); err != nil {
-			t.Fatalf("writing versioned state file: %v", err)
-		}
-
-		s := state.NewFileStore(path)
-		_, err = s.List()
-		if err == nil {
-			t.Fatal("expected error for invalid schema version format, got nil")
-		}
-		if !strings.Contains(err.Error(), "invalid schema_version") {
-			t.Fatalf("expected invalid schema_version error, got: %v", err)
-		}
-	}
-
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("reading state file: %v", err)
 	}
 	if !contains(string(data), "schema_version") {
 		t.Error("expected state file to contain schema_version field")
+	}
+}
+
+func TestFileStoreReadsLegacyStateWithoutSchemaVersion(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+
+	legacy := map[string]interface{}{
+		"installations": map[string]state.LocalInstallation{
+			"obs-studio": sampleRecord(),
+		},
+	}
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatalf("json.Marshal legacy state failed: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("writing legacy state file: %v", err)
+	}
+
+	s := state.NewFileStore(path)
+	got, found, err := s.Get("obs-studio")
+	if err != nil {
+		t.Fatalf("expected legacy state load to succeed, got error: %v", err)
+	}
+	if !found {
+		t.Fatal("expected record to be found in legacy state")
+	}
+	if got.ApplicationID != "obs-studio" {
+		t.Errorf("expected ApplicationID obs-studio, got %q", got.ApplicationID)
+	}
+}
+
+func TestFileStoreReadsCompatibleSchemaMinorVersion(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+
+	versioned := map[string]interface{}{
+		"schema_version": "1.5",
+		"installations": map[string]state.LocalInstallation{
+			"obs-studio": sampleRecord(),
+		},
+	}
+	data, err := json.Marshal(versioned)
+	if err != nil {
+		t.Fatalf("json.Marshal versioned state failed: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("writing versioned state file: %v", err)
+	}
+
+	s := state.NewFileStore(path)
+	_, found, err := s.Get("obs-studio")
+	if err != nil {
+		t.Fatalf("expected compatible schema version to load, got error: %v", err)
+	}
+	if !found {
+		t.Fatal("expected record to be found for compatible schema version")
+	}
+}
+
+func TestFileStoreRejectsUnsupportedSchemaMajorVersion(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+
+	versioned := map[string]interface{}{
+		"schema_version": "2.0",
+		"installations":  map[string]state.LocalInstallation{},
+	}
+	data, err := json.Marshal(versioned)
+	if err != nil {
+		t.Fatalf("json.Marshal versioned state failed: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("writing versioned state file: %v", err)
+	}
+
+	s := state.NewFileStore(path)
+	_, err = s.List()
+	if err == nil {
+		t.Fatal("expected error for unsupported schema major version, got nil")
+	}
+	if !strings.Contains(err.Error(), "unsupported schema_version") {
+		t.Fatalf("expected unsupported schema_version error, got: %v", err)
+	}
+}
+
+func TestFileStoreRejectsInvalidSchemaVersionFormat(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+
+	versioned := map[string]interface{}{
+		"schema_version": "v1",
+		"installations":  map[string]state.LocalInstallation{},
+	}
+	data, err := json.Marshal(versioned)
+	if err != nil {
+		t.Fatalf("json.Marshal versioned state failed: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("writing versioned state file: %v", err)
+	}
+
+	s := state.NewFileStore(path)
+	_, err = s.List()
+	if err == nil {
+		t.Fatal("expected error for invalid schema version format, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid schema_version") {
+		t.Fatalf("expected invalid schema_version error, got: %v", err)
 	}
 }
 
