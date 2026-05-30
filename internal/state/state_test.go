@@ -8,8 +8,8 @@ import (
 	"github.com/mitslab-de/omniinstall/internal/state"
 )
 
-func TestInstallRecord_Validate_Valid(t *testing.T) {
-	r := &state.InstallRecord{
+func TestLocalInstallation_Validate_Valid(t *testing.T) {
+	r := &state.LocalInstallation{
 		ApplicationID:      "obs-studio",
 		SourceType:         source.TypeAPT,
 		SourceIdentifier:   "obs-studio",
@@ -22,8 +22,8 @@ func TestInstallRecord_Validate_Valid(t *testing.T) {
 	}
 }
 
-func TestInstallRecord_Validate_MissingApplicationID(t *testing.T) {
-	r := &state.InstallRecord{
+func TestLocalInstallation_Validate_MissingApplicationID(t *testing.T) {
+	r := &state.LocalInstallation{
 		SourceType:         source.TypeAPT,
 		SourceIdentifier:   "obs-studio",
 		InstallTimestamp:   time.Now(),
@@ -35,8 +35,8 @@ func TestInstallRecord_Validate_MissingApplicationID(t *testing.T) {
 	}
 }
 
-func TestInstallRecord_Validate_MissingTimestamp(t *testing.T) {
-	r := &state.InstallRecord{
+func TestLocalInstallation_Validate_MissingTimestamp(t *testing.T) {
+	r := &state.LocalInstallation{
 		ApplicationID:      "obs-studio",
 		SourceType:         source.TypeAPT,
 		SourceIdentifier:   "obs-studio",

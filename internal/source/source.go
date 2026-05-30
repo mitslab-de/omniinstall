@@ -45,19 +45,19 @@ const (
 // Source maps an application identity to an installable artifact.
 type Source struct {
 	// ApplicationID is the canonical OmniInstall application identifier.
-	ApplicationID string
+	ApplicationID string `json:"application_id" yaml:"application_id"`
 
 	// SourceType identifies the backend mechanism.
-	SourceType Type
+	SourceType Type `json:"source_type" yaml:"source_type"`
 
 	// SourceIdentifier is the backend-specific package or application ID.
-	SourceIdentifier string
+	SourceIdentifier string `json:"source_identifier" yaml:"source_identifier"`
 
 	// TrustLevel describes how trusted this source is.
-	TrustLevel TrustLevel
+	TrustLevel TrustLevel `json:"trust_level" yaml:"trust_level"`
 
 	// RiskLevel describes the risk of using this source.
-	RiskLevel RiskLevel
+	RiskLevel RiskLevel `json:"risk_level" yaml:"risk_level"`
 }
 
 // validTypes is the set of known source type values.

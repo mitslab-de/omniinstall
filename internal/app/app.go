@@ -17,31 +17,31 @@ var validIDPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // It is separate from any package-manager-specific representation.
 type Application struct {
 	// ID is the canonical OmniInstall identifier (lowercase, kebab-case).
-	ID string
+	ID string `json:"id" yaml:"id"`
 
 	// DisplayName is the human-readable application name.
-	DisplayName string
+	DisplayName string `json:"display_name" yaml:"display_name"`
 
 	// Summary is a short one-line description.
-	Summary string
+	Summary string `json:"summary" yaml:"summary"`
 
 	// Categories are user-facing category labels.
-	Categories []string
+	Categories []string `json:"categories" yaml:"categories"`
 
 	// Aliases are alternative search names.
-	Aliases []string
+	Aliases []string `json:"aliases,omitempty" yaml:"aliases,omitempty"`
 
 	// Homepage is the upstream project URL.
-	Homepage string
+	Homepage string `json:"homepage,omitempty" yaml:"homepage,omitempty"`
 
 	// License is the SPDX license identifier.
-	License string
+	License string `json:"license,omitempty" yaml:"license,omitempty"`
 
 	// Publisher is the name of the publisher or maintainer.
-	Publisher string
+	Publisher string `json:"publisher,omitempty" yaml:"publisher,omitempty"`
 
 	// Description is the full user-facing description.
-	Description string
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 }
 
 // Validate checks that the Application has all required fields and valid format.

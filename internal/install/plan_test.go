@@ -14,7 +14,7 @@ func TestPlan_Validate_Valid(t *testing.T) {
 		SourceIdentifier:  "obs-studio",
 		RiskLevel:         source.RiskLow,
 		RequiresPrivilege: true,
-		Verification:      []install.VerificationCheck{{Command: "obs"}},
+		Verification:      []install.VerificationRule{{Command: "obs"}},
 	}
 	if err := p.Validate(); err != nil {
 		t.Errorf("expected valid plan, got error: %v", err)
@@ -26,7 +26,7 @@ func TestPlan_Validate_MissingApplicationID(t *testing.T) {
 		SourceType:       source.TypeAPT,
 		SourceIdentifier: "obs-studio",
 		RiskLevel:        source.RiskLow,
-		Verification:     []install.VerificationCheck{{Command: "obs"}},
+		Verification:     []install.VerificationRule{{Command: "obs"}},
 	}
 	if err := p.Validate(); err == nil {
 		t.Error("expected error for missing application_id, got nil")
@@ -38,7 +38,7 @@ func TestPlan_Validate_MissingSourceType(t *testing.T) {
 		ApplicationID:    "obs-studio",
 		SourceIdentifier: "obs-studio",
 		RiskLevel:        source.RiskLow,
-		Verification:     []install.VerificationCheck{{Command: "obs"}},
+		Verification:     []install.VerificationRule{{Command: "obs"}},
 	}
 	if err := p.Validate(); err == nil {
 		t.Error("expected error for missing source_type, got nil")
@@ -50,7 +50,7 @@ func TestPlan_Validate_MissingSourceIdentifier(t *testing.T) {
 		ApplicationID: "obs-studio",
 		SourceType:    source.TypeAPT,
 		RiskLevel:     source.RiskLow,
-		Verification:  []install.VerificationCheck{{Command: "obs"}},
+		Verification:  []install.VerificationRule{{Command: "obs"}},
 	}
 	if err := p.Validate(); err == nil {
 		t.Error("expected error for missing source_identifier, got nil")
@@ -62,7 +62,7 @@ func TestPlan_Validate_MissingRiskLevel(t *testing.T) {
 		ApplicationID:    "obs-studio",
 		SourceType:       source.TypeAPT,
 		SourceIdentifier: "obs-studio",
-		Verification:     []install.VerificationCheck{{Command: "obs"}},
+		Verification:     []install.VerificationRule{{Command: "obs"}},
 	}
 	if err := p.Validate(); err == nil {
 		t.Error("expected error for missing risk_level, got nil")

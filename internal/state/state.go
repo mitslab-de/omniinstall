@@ -31,32 +31,32 @@ const (
 	VerificationPending VerificationStatus = "pending"
 )
 
-// InstallRecord is a single local state entry for an installed application.
-type InstallRecord struct {
+// LocalInstallation is a single local state entry for an installed application.
+type LocalInstallation struct {
 	// ApplicationID is the canonical OmniInstall application identifier.
-	ApplicationID string
+	ApplicationID string `json:"application_id" yaml:"application_id"`
 
 	// SourceType identifies the backend used to install the application.
-	SourceType source.Type
+	SourceType source.Type `json:"source_type" yaml:"source_type"`
 
 	// SourceIdentifier is the backend-specific package or application ID.
-	SourceIdentifier string
+	SourceIdentifier string `json:"source_identifier" yaml:"source_identifier"`
 
 	// InstallTimestamp is when the installation was performed.
-	InstallTimestamp time.Time
+	InstallTimestamp time.Time `json:"install_timestamp" yaml:"install_timestamp"`
 
 	// InstallStatus is the outcome of the last install operation.
-	InstallStatus InstallStatus
+	InstallStatus InstallStatus `json:"install_status" yaml:"install_status"`
 
 	// VerificationStatus is the outcome of the last verification check.
-	VerificationStatus VerificationStatus
+	VerificationStatus VerificationStatus `json:"verification_status" yaml:"verification_status"`
 
 	// Version is the installed version (optional).
-	Version string
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
 }
 
-// Validate checks that the InstallRecord has all required fields.
-func (r *InstallRecord) Validate() error {
+// Validate checks that the LocalInstallation has all required fields.
+func (r *LocalInstallation) Validate() error {
 	if r.ApplicationID == "" {
 		return errors.New("application_id is required")
 	}

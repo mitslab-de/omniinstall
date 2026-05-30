@@ -10,44 +10,44 @@ import (
 	"github.com/mitslab-de/omniinstall/internal/source"
 )
 
-// VerificationCheck describes a post-installation verification step.
-type VerificationCheck struct {
+// VerificationRule describes a post-installation verification step.
+type VerificationRule struct {
 	// Command is a binary name that should be findable after installation.
-	Command string
+	Command string `json:"command,omitempty" yaml:"command,omitempty"`
 }
 
 // Plan is an immutable, explicit instruction for installing one application.
 // The Install Engine must reject any plan that does not pass Validate().
 type Plan struct {
 	// ApplicationID is the canonical OmniInstall application identifier.
-	ApplicationID string
+	ApplicationID string `json:"application_id" yaml:"application_id"`
 
 	// SourceType identifies the backend to use.
-	SourceType source.Type
+	SourceType source.Type `json:"source_type" yaml:"source_type"`
 
 	// SourceIdentifier is the backend-specific package or application ID.
-	SourceIdentifier string
+	SourceIdentifier string `json:"source_identifier" yaml:"source_identifier"`
 
 	// RiskLevel reflects the assessed risk of this installation.
-	RiskLevel source.RiskLevel
+	RiskLevel source.RiskLevel `json:"risk_level" yaml:"risk_level"`
 
 	// RequiresPrivilege indicates whether elevated privileges are needed.
-	RequiresPrivilege bool
+	RequiresPrivilege bool `json:"requires_privilege,omitempty" yaml:"requires_privilege,omitempty"`
 
 	// RequiresConfirmation indicates whether the user must explicitly confirm.
-	RequiresConfirmation bool
+	RequiresConfirmation bool `json:"requires_confirmation,omitempty" yaml:"requires_confirmation,omitempty"`
 
 	// Explanation is a user-facing description of why this plan was created.
-	Explanation string
+	Explanation string `json:"explanation,omitempty" yaml:"explanation,omitempty"`
 
 	// Verification is the list of checks to perform after installation.
-	Verification []VerificationCheck
+	Verification []VerificationRule `json:"verification" yaml:"verification"`
 
 	// RepositoryChanges describes any repository or PPA additions required.
-	RepositoryChanges []string
+	RepositoryChanges []string `json:"repository_changes,omitempty" yaml:"repository_changes,omitempty"`
 
 	// ExpectedVersion is the version expected after installation (optional).
-	ExpectedVersion string
+	ExpectedVersion string `json:"expected_version,omitempty" yaml:"expected_version,omitempty"`
 }
 
 // validPlanTypes is the set of source types accepted in an install plan.
