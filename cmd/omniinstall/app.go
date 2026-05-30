@@ -23,6 +23,7 @@ import (
 	"github.com/mitslab-de/omniinstall/internal/resolver"
 	"github.com/mitslab-de/omniinstall/internal/source"
 	"github.com/mitslab-de/omniinstall/internal/state"
+	"gopkg.in/yaml.v3"
 )
 
 // App wires together all core services and implements the CLI commands.
@@ -633,6 +634,125 @@ func (a *App) listJSON() error {
 		})
 	}
 	return writeJSON(a.out, out)
+}
+
+// stateExportFormat is the schema used for state export/import files.
+type stateExportFormat struct {
+	SchemaVersion string                   `json:"schema_version" yaml:"schema_version"`
+	ExportedAt    string                   `json:"exported_at"    yaml:"exported_at"`
+	Installations []state.LocalInstallation `json:"installations"  yaml:"installations"`
+}
+
+// stateExport handles `omniinstall state export [--yaml]`.
+//
+// Outputs all non-removed installations as JSON (default) or YAML.
+func (a *App) stateExport(yamlOutput bool) error {
+	records, err := a.store.List()
+	if err != nil {
+		return fmt.Errorf("could not read local state: %w", err)
+	}
+
+	active := make([]state.LocalInstallation, 0, len(records))
+	for _, r := range records {
+		if r.InstallStatus != state.StatusRemoved {
+			active = append(active, r)
+		}
+	}
+	sort.Slice(active, func(i, j int) bool {
+		return active[i].ApplicationID < active[j].ApplicationID
+	})
+
+	export := stateExportFormat{
+		SchemaVersion: "1.0",
+		ExportedAt:    time.Now().UTC().Format(time.RFC3339),
+		Installations: active,
+	}
+
+	if yamlOutput {
+		enc := yaml.NewEncoder(a.out)
+		enc.SetIndent(2)
+		if err := enc.Encode(export); err != nil {
+			return fmt.Errorf("yaml encode failed: %w", err)
+		}
+		return enc.Close()
+	}
+	return writeJSON(a.out, export)
+}
+
+// stateImport handles `omniinstall state import <file> [--force] [--dry-run]`.
+//
+// Reads a JSON/YAML export file and records any non-conflicting installations
+// into local state. With --force, existing records are overwritten. With
+// --dry-run, changes are shown but not applied.
+func (a *App) stateImport(filePath string, force, dryRun bool) error {
+	if filePath == "" {
+		return errors.New("usage: omniinstall state import <file> [--force] [--dry-run]")
+	}
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("could not read file %q: %w", filePath, err)
+	}
+
+	var export stateExportFormat
+	// Try JSON first, fall back to YAML.
+	if jsonErr := json.Unmarshal(data, &export); jsonErr != nil {
+		if yamlErr := yaml.Unmarshal(data, &export); yamlErr != nil {
+			return fmt.Errorf("file is not valid JSON or YAML: %v; %v", jsonErr, yamlErr)
+		}
+	}
+
+	// Validate schema_version.
+	if export.SchemaVersion == "" {
+		return errors.New("import file is missing schema_version")
+	}
+	parts := strings.SplitN(export.SchemaVersion, ".", 2)
+	if parts[0] != "1" {
+		return fmt.Errorf("unsupported schema_version %q: only major version 1 is supported", export.SchemaVersion)
+	}
+
+	if len(export.Installations) == 0 {
+		fmt.Fprintf(a.out, "No installations found in import file.\n")
+		return nil
+	}
+
+	var toImport []state.LocalInstallation
+	for _, rec := range export.Installations {
+		if err := rec.Validate(); err != nil {
+			fmt.Fprintf(a.out, "  Skipping %q: invalid record (%v)\n", rec.ApplicationID, err)
+			continue
+		}
+		existing, found, lookupErr := a.store.Get(rec.ApplicationID)
+		if lookupErr != nil {
+			return fmt.Errorf("state lookup failed: %w", lookupErr)
+		}
+		if found && existing.InstallStatus != state.StatusRemoved && !force {
+			fmt.Fprintf(a.out, "  Skipping %q: already installed (use --force to overwrite)\n", rec.ApplicationID)
+			continue
+		}
+		toImport = append(toImport, rec)
+	}
+
+	if dryRun {
+		fmt.Fprintf(a.out, "Dry-run: would import %d installation(s):\n", len(toImport))
+		for _, rec := range toImport {
+			fmt.Fprintf(a.out, "  %s (%s %s)\n", rec.ApplicationID, rec.SourceType, rec.SourceIdentifier)
+		}
+		fmt.Fprintf(a.out, "\nNo changes were made (dry-run).\n")
+		return nil
+	}
+
+	imported := 0
+	for _, rec := range toImport {
+		if err := a.store.Record(rec); err != nil {
+			fmt.Fprintf(a.out, "  Warning: could not import %q: %v\n", rec.ApplicationID, err)
+			continue
+		}
+		fmt.Fprintf(a.out, "  Imported: %s\n", rec.ApplicationID)
+		imported++
+	}
+	fmt.Fprintf(a.out, "\n%d installation(s) imported.\n", imported)
+	return nil
 }
 
 // handleProgress prints progress events to the output writer.

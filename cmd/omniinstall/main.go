@@ -176,6 +176,41 @@ func run(args []string) error {
 			return app.listJSON()
 		}
 		return app.list()
+	case "state":
+		if len(args) < 2 {
+			return errors.New("usage: omniinstall state <export|import> [options]")
+		}
+		switch args[1] {
+		case "export":
+			yamlOutput := false
+			for _, a := range args[2:] {
+				if a == "--yaml" {
+					yamlOutput = true
+				}
+			}
+			app := newApp(os.Stdout)
+			return app.stateExport(yamlOutput)
+		case "import":
+			filePath := ""
+			force := false
+			dryRun := false
+			for _, a := range args[2:] {
+				switch a {
+				case "--force":
+					force = true
+				case "--dry-run":
+					dryRun = true
+				default:
+					if !strings.HasPrefix(a, "--") && filePath == "" {
+						filePath = a
+					}
+				}
+			}
+			app := newApp(os.Stdout)
+			return app.stateImport(filePath, force, dryRun)
+		default:
+			return fmt.Errorf("unknown state subcommand %q — use 'export' or 'import'", args[1])
+		}
 	default:
 		return fmt.Errorf("unknown command %q — run 'omniinstall help' for usage", args[0])
 	}

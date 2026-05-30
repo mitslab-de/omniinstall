@@ -173,6 +173,10 @@ func (f *CLIFixture) run(cmd string, args ...string) error {
 		return a.installDryRun(arg0)
 	case "install-dry-run-json":
 		return a.installDryRunJSON(arg0)
+	case "state-export":
+		return a.stateExport(false)
+	case "state-export-yaml":
+		return a.stateExport(true)
 	case "remove":
 		return a.remove(arg0)
 	case "verify":

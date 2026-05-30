@@ -157,3 +157,50 @@ if strings.Contains(listOut, "git") {
 t.Errorf("dry-run JSON should not record state; list unexpectedly showed 'git': %s", listOut)
 }
 }
+
+// ---------------------------------------------------------------------------
+// State export/import tests (tasks 0038/0039)
+// ---------------------------------------------------------------------------
+
+func TestFixture_StateExport_Empty_ReturnsEmptyList(t *testing.T) {
+f := newFixture(t).withAPT()
+out := f.mustRun(t, "state-export")
+if !strings.Contains(out, `"schema_version"`) {
+t.Errorf("expected schema_version in export, got: %s", out)
+}
+if !strings.Contains(out, `"installations"`) {
+t.Errorf("expected installations field in export, got: %s", out)
+}
+}
+
+func TestFixture_StateExport_ContainsInstalledApp(t *testing.T) {
+f := newFixture(t).withAPT().withInstalledAPT("git", "git")
+out := f.mustRun(t, "state-export")
+if !strings.Contains(out, "git") {
+t.Errorf("expected exported state to contain 'git', got: %s", out)
+}
+}
+
+func TestFixture_StateExport_ExcludesRemovedApps(t *testing.T) {
+f := newFixture(t).withAPT().withRemovedAPT("git", "git")
+out := f.mustRun(t, "state-export")
+// A removed app should not appear in the exported active list.
+if strings.Contains(out, `"git"`) {
+// The JSON will have empty installations array.
+if !strings.Contains(out, `"installations":[]`) && !strings.Contains(out, `"installations": []`) {
+// It's ok if git appears as part of the empty array structure —
+// but there should be no installation entries with git.
+if strings.Contains(out, `"application_id":"git"`) || strings.Contains(out, `"application_id": "git"`) {
+t.Errorf("removed app should not appear in state export, got: %s", out)
+}
+}
+}
+}
+
+func TestFixture_StateExport_YAML_ContainsSchemaVersion(t *testing.T) {
+f := newFixture(t).withAPT()
+out := f.mustRun(t, "state-export-yaml")
+if !strings.Contains(out, "schema_version:") {
+t.Errorf("expected schema_version in YAML export, got: %s", out)
+}
+}
