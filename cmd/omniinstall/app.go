@@ -36,6 +36,10 @@ type App struct {
 // wiring all services together.
 func newApp(out io.Writer) *App {
 	managers := detectAvailableManagers()
+	catalog, catalogErr := discovery.LoadCatalogWithFallback(os.Getenv("OMNIINSTALL_CATALOG_PATH"))
+	if catalogErr != nil {
+		fmt.Fprintf(out, "Warning: %v\n", catalogErr)
+	}
 
 	adapters := []adapter.Adapter{
 		aptadapter.New(),
@@ -45,7 +49,7 @@ func newApp(out io.Writer) *App {
 	storePath := state.DefaultStorePath()
 
 	return &App{
-		discovery: discovery.NewLocalEngine(discovery.MVPCatalog()),
+		discovery: discovery.NewLocalEngine(catalog),
 		resolver:  resolver.NewDefaultResolver(),
 		engine:    engine.NewDefaultEngine(adapters, nil),
 		store:     state.NewFileStore(storePath),
