@@ -56,6 +56,7 @@ type mockAdapter struct {
 	handledTypes  []source.Type
 	installResult *adapter.Result
 	removeResult  *adapter.Result
+	removedIDs    []string
 }
 
 func (m *mockAdapter) Name() string       { return m.name }
@@ -78,6 +79,7 @@ func (m *mockAdapter) Install(plan *install.Plan) (*adapter.Result, error) {
 	return &adapter.Result{Success: true, Message: "installed", ChangedSystem: true}, nil
 }
 func (m *mockAdapter) Remove(id string) (*adapter.Result, error) {
+	m.removedIDs = append(m.removedIDs, id)
 	if m.removeResult != nil {
 		return m.removeResult, nil
 	}
@@ -211,6 +213,50 @@ func TestAppRemove_EmptyAppID(t *testing.T) {
 	app := newAppWithStore(buf, newMockStore(), aptManagers())
 	if err := app.remove(""); err == nil {
 		t.Error("expected error for empty appID")
+	}
+}
+
+func TestAppRemove_RequiresInstalledStateRecord(t *testing.T) {
+	buf := &strings.Builder{}
+	app := newAppForTest(buf, successEngine(source.TypeAPT), newMockStore(), aptManagers())
+	if err := app.remove("git"); err == nil {
+		t.Error("expected error when app is not recorded as installed")
+	}
+}
+
+func TestAppRemove_UsesRecordedSourceDetails(t *testing.T) {
+	buf := &strings.Builder{}
+	store := newMockStore()
+	_ = store.Record(state.LocalInstallation{
+		ApplicationID:      "obs-studio",
+		SourceType:         source.TypeFlatpak,
+		SourceIdentifier:   "com.obsproject.Studio",
+		InstallTimestamp:   time.Now(),
+		InstallStatus:      state.StatusInstalled,
+		VerificationStatus: state.VerificationPassed,
+	})
+
+	aptAdapter := &mockAdapter{
+		name:         "apt",
+		available:    true,
+		handledTypes: []source.Type{source.TypeAPT},
+	}
+	flatpakAdapter := &mockAdapter{
+		name:         "flatpak",
+		available:    true,
+		handledTypes: []source.Type{source.TypeFlatpak},
+	}
+	eng := engine.NewDefaultEngine([]adapter.Adapter{aptAdapter, flatpakAdapter}, nil)
+	app := newAppForTest(buf, eng, store, flatpakManagers())
+
+	if err := app.remove("obs-studio"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(aptAdapter.removedIDs) != 0 {
+		t.Fatalf("expected apt adapter not used, got %v", aptAdapter.removedIDs)
+	}
+	if len(flatpakAdapter.removedIDs) != 1 || flatpakAdapter.removedIDs[0] != "com.obsproject.Studio" {
+		t.Fatalf("expected flatpak adapter remove identifier com.obsproject.Studio, got %v", flatpakAdapter.removedIDs)
 	}
 }
 

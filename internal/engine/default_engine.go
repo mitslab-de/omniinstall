@@ -6,6 +6,7 @@ import (
 
 	adapter "github.com/mitslab-de/omniinstall/internal/adapters"
 	"github.com/mitslab-de/omniinstall/internal/install"
+	"github.com/mitslab-de/omniinstall/internal/source"
 )
 
 // DefaultEngine is the standard implementation of the Engine interface.
@@ -123,18 +124,24 @@ func (e *DefaultEngine) Install(plan *install.Plan) (*Result, error) {
 	}, nil
 }
 
-// Remove removes the application identified by applicationID. It attempts
-// removal through the first available adapter.
-func (e *DefaultEngine) Remove(applicationID string) (*Result, error) {
+// Remove removes the application identified by applicationID using the source
+// metadata recorded at install time.
+func (e *DefaultEngine) Remove(applicationID string, sourceType source.Type, sourceIdentifier string) (*Result, error) {
 	if applicationID == "" {
 		return nil, errors.New("applicationID must not be empty")
+	}
+	if sourceType == "" {
+		return nil, errors.New("sourceType must not be empty")
+	}
+	if sourceIdentifier == "" {
+		return nil, errors.New("sourceIdentifier must not be empty")
 	}
 
 	e.emit(EventStarted, applicationID, fmt.Sprintf("Starting removal of %s", applicationID))
 
-	a := e.firstAvailableAdapter()
+	a := e.selectRemovalAdapter(sourceType)
 	if a == nil {
-		msg := "no available adapter for removal"
+		msg := fmt.Sprintf("no available adapter for source type %s", sourceType)
 		e.emit(EventFailed, applicationID, msg)
 		return &Result{
 			Success:       false,
@@ -144,8 +151,8 @@ func (e *DefaultEngine) Remove(applicationID string) (*Result, error) {
 		}, nil
 	}
 
-	e.emit(EventExecuting, applicationID, fmt.Sprintf("Removing %s via %s", applicationID, a.Name()))
-	result, err := a.Remove(applicationID)
+	e.emit(EventExecuting, applicationID, fmt.Sprintf("Removing %s via %s", sourceIdentifier, a.Name()))
+	result, err := a.Remove(sourceIdentifier)
 	if err != nil {
 		e.emit(EventFailed, applicationID, "Adapter error: "+err.Error())
 		return &Result{
@@ -181,11 +188,11 @@ func (e *DefaultEngine) selectAdapter(plan *install.Plan) (adapter.Adapter, erro
 	return nil, fmt.Errorf("no available adapter for source type %s", plan.SourceType)
 }
 
-// firstAvailableAdapter returns the first adapter that reports IsAvailable(),
-// or nil if none are available.
-func (e *DefaultEngine) firstAvailableAdapter() adapter.Adapter {
+// selectRemovalAdapter returns the first available adapter that supports the
+// given source type.
+func (e *DefaultEngine) selectRemovalAdapter(sourceType source.Type) adapter.Adapter {
 	for _, a := range e.adapters {
-		if a.IsAvailable() {
+		if a.IsAvailable() && a.CanHandle(sourceType) {
 			return a
 		}
 	}

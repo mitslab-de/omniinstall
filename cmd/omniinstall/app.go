@@ -165,7 +165,15 @@ func (a *App) remove(appID string) error {
 		return errors.New("usage: omni remove <application>")
 	}
 
-	result, err := a.engine.Remove(appID)
+	record, found, err := a.store.Get(appID)
+	if err != nil {
+		return fmt.Errorf("failed to read local state: %w", err)
+	}
+	if !found || record.InstallStatus == state.StatusRemoved {
+		return fmt.Errorf("application %q is not recorded as installed", appID)
+	}
+
+	result, err := a.engine.Remove(appID, record.SourceType, record.SourceIdentifier)
 	if err != nil {
 		return fmt.Errorf("remove engine error: %w", err)
 	}

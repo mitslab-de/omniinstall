@@ -22,6 +22,7 @@ type mockAdapter struct {
 	verifyErr     error
 	checkState    adapter.InstalledState
 	checkErr      error
+	removedIDs    []string
 }
 
 func (m *mockAdapter) Name() string { return m.name }
@@ -46,6 +47,7 @@ func (m *mockAdapter) Install(plan *install.Plan) (*adapter.Result, error) {
 }
 
 func (m *mockAdapter) Remove(id string) (*adapter.Result, error) {
+	m.removedIDs = append(m.removedIDs, id)
 	return m.removeResult, m.removeErr
 }
 
@@ -198,7 +200,7 @@ func TestDefaultEngineProgressEvents(t *testing.T) {
 
 func TestDefaultEngineRemoveSuccess(t *testing.T) {
 	e := engine.NewDefaultEngine([]adapter.Adapter{successAdapter()}, nil)
-	result, err := e.Remove("test-app")
+	result, err := e.Remove("test-app", source.TypeAPT, "test-app")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -212,7 +214,7 @@ func TestDefaultEngineRemoveSuccess(t *testing.T) {
 
 func TestDefaultEngineRemoveEmptyID(t *testing.T) {
 	e := engine.NewDefaultEngine([]adapter.Adapter{successAdapter()}, nil)
-	_, err := e.Remove("")
+	_, err := e.Remove("", source.TypeAPT, "test-app")
 	if err == nil {
 		t.Error("expected error for empty applicationID")
 	}
@@ -220,7 +222,7 @@ func TestDefaultEngineRemoveEmptyID(t *testing.T) {
 
 func TestDefaultEngineRemoveNoAdapter(t *testing.T) {
 	e := engine.NewDefaultEngine(nil, nil)
-	result, err := e.Remove("test-app")
+	result, err := e.Remove("test-app", source.TypeAPT, "test-app")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -229,6 +231,29 @@ func TestDefaultEngineRemoveNoAdapter(t *testing.T) {
 	}
 	if result.ErrorCategory != adapter.ErrBackendUnavailable {
 		t.Errorf("expected error_category=%s, got %s", adapter.ErrBackendUnavailable, result.ErrorCategory)
+	}
+}
+
+func TestDefaultEngineRemoveUsesSourceIdentifierAndSourceType(t *testing.T) {
+	apt := successAdapter()
+	apt.handledTypes = []source.Type{source.TypeAPT}
+	flatpak := successAdapter()
+	flatpak.name = "flatpak"
+	flatpak.handledTypes = []source.Type{source.TypeFlatpak}
+
+	e := engine.NewDefaultEngine([]adapter.Adapter{apt, flatpak}, nil)
+	result, err := e.Remove("obs-studio", source.TypeFlatpak, "com.obsproject.Studio")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got %s", result.Message)
+	}
+	if len(apt.removedIDs) != 0 {
+		t.Fatalf("expected apt adapter not to be used, got removals: %v", apt.removedIDs)
+	}
+	if len(flatpak.removedIDs) != 1 || flatpak.removedIDs[0] != "com.obsproject.Studio" {
+		t.Fatalf("expected flatpak removal with source identifier, got %v", flatpak.removedIDs)
 	}
 }
 

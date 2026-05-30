@@ -7,6 +7,7 @@ package engine
 
 import (
 	"github.com/mitslab-de/omniinstall/internal/install"
+	"github.com/mitslab-de/omniinstall/internal/source"
 )
 
 // Result is the structured outcome of an engine execution.
@@ -29,6 +30,6 @@ type Engine interface {
 	// Install executes the given plan and returns a structured result.
 	Install(plan *install.Plan) (*Result, error)
 
-	// Remove removes an application by ID and source type.
-	Remove(applicationID string) (*Result, error)
+	// Remove removes an application by ID using the given source details.
+	Remove(applicationID string, sourceType source.Type, sourceIdentifier string) (*Result, error)
 }
