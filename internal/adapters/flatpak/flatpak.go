@@ -195,4 +195,3 @@ func categorizeFlatpakError(output string) string {
 	}
 	return adapter.ErrExecutionFailed
 }
-

@@ -35,8 +35,8 @@ type contractMockAdapter struct {
 	available bool
 }
 
-func (m *contractMockAdapter) Name() string       { return m.name }
-func (m *contractMockAdapter) IsAvailable() bool  { return m.available }
+func (m *contractMockAdapter) Name() string                 { return m.name }
+func (m *contractMockAdapter) IsAvailable() bool            { return m.available }
 func (m *contractMockAdapter) CanHandle(t source.Type) bool { return t == source.TypeAPT }
 func (m *contractMockAdapter) CheckInstalled(id string) (adapter.InstalledState, error) {
 	return adapter.StateUnknown, nil

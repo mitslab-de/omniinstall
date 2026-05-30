@@ -59,8 +59,8 @@ type mockAdapter struct {
 	removedIDs    []string
 }
 
-func (m *mockAdapter) Name() string       { return m.name }
-func (m *mockAdapter) IsAvailable() bool  { return m.available }
+func (m *mockAdapter) Name() string      { return m.name }
+func (m *mockAdapter) IsAvailable() bool { return m.available }
 func (m *mockAdapter) CanHandle(t source.Type) bool {
 	for _, ht := range m.handledTypes {
 		if ht == t {

@@ -213,4 +213,3 @@ func categorizeExitCode(exitCode int, output string) string {
 	}
 	return adapter.ErrExecutionFailed
 }
-

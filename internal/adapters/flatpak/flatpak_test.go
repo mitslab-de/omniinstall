@@ -240,4 +240,3 @@ func TestAdapterContract(t *testing.T) {
 		t.Error("CanHandle must return false for unknown source type")
 	}
 }
-
