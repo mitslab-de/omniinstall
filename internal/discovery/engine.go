@@ -4,19 +4,42 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mitslab-de/omniinstall/internal/app"
+	"github.com/mitslab-de/omniinstall/internal/logging"
 )
 
 // LocalEngine is a Discovery Engine backed by a local Catalog.
 // It implements the Engine interface.
 type LocalEngine struct {
 	catalog *Catalog
+	logger  logging.Emitter
+	now     func() time.Time
 }
 
 // NewLocalEngine creates a new LocalEngine backed by the given Catalog.
 func NewLocalEngine(catalog *Catalog) *LocalEngine {
-	return &LocalEngine{catalog: catalog}
+	return &LocalEngine{
+		catalog: catalog,
+		now:     time.Now,
+	}
+}
+
+// WithLogger configures structured action logging for the engine.
+func (e *LocalEngine) WithLogger(logger logging.Emitter) *LocalEngine {
+	e.logger = logger
+	return e
+}
+
+func (e *LocalEngine) emitLog(entry logging.Entry) {
+	if e.logger == nil {
+		return
+	}
+	if entry.Timestamp.IsZero() {
+		entry.Timestamp = e.now()
+	}
+	e.logger.Emit(entry)
 }
 
 // Search returns candidates from the catalog that match the query.
@@ -27,11 +50,22 @@ func NewLocalEngine(catalog *Catalog) *LocalEngine {
 // Returns an empty slice (never nil) when no matches are found.
 // Returns a descriptive error when the query is empty.
 func (e *LocalEngine) Search(query string) ([]*Candidate, error) {
+	start := time.Now()
+	trimmedQuery := strings.TrimSpace(query)
+
 	if strings.TrimSpace(query) == "" {
-		return nil, fmt.Errorf("search query must not be empty")
+		err := fmt.Errorf("search query must not be empty")
+		e.emitLog(logging.Entry{
+			Action:        logging.ActionSearch,
+			ApplicationID: trimmedQuery,
+			Result:        "failure",
+			Duration:      time.Since(start),
+			ErrorCategory: "invalid_query",
+		})
+		return nil, err
 	}
 
-	q := strings.ToLower(strings.TrimSpace(query))
+	q := strings.ToLower(trimmedQuery)
 	var results []*Candidate
 
 	for _, a := range e.catalog.All() {
@@ -53,8 +87,20 @@ func (e *LocalEngine) Search(query string) ([]*Candidate, error) {
 	})
 
 	if results == nil {
+		e.emitLog(logging.Entry{
+			Action:        logging.ActionSearch,
+			ApplicationID: trimmedQuery,
+			Result:        "success",
+			Duration:      time.Since(start),
+		})
 		return []*Candidate{}, nil
 	}
+	e.emitLog(logging.Entry{
+		Action:        logging.ActionSearch,
+		ApplicationID: trimmedQuery,
+		Result:        "success",
+		Duration:      time.Since(start),
+	})
 	return results, nil
 }
 

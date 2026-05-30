@@ -7,6 +7,7 @@ import (
 	adapter "github.com/mitslab-de/omniinstall/internal/adapters"
 	"github.com/mitslab-de/omniinstall/internal/engine"
 	"github.com/mitslab-de/omniinstall/internal/install"
+	"github.com/mitslab-de/omniinstall/internal/logging"
 	"github.com/mitslab-de/omniinstall/internal/source"
 )
 
@@ -342,5 +343,85 @@ func TestProgressEventKindConstants(t *testing.T) {
 		if c == "" {
 			t.Error("EventKind constant must not be empty")
 		}
+	}
+}
+
+func TestDefaultEngineInstallEmitsStructuredInstallAndVerifyLogs(t *testing.T) {
+	e := engine.NewDefaultEngine([]adapter.Adapter{successAdapter()}, nil)
+	var entries []logging.Entry
+	e.WithLogger(logging.EmitFunc(func(entry logging.Entry) {
+		entries = append(entries, entry)
+	}))
+
+	if _, err := e.Install(goodPlan); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 log entries (verify + install), got %d", len(entries))
+	}
+	if entries[0].Action != logging.ActionVerify {
+		t.Fatalf("expected first action verify, got %q", entries[0].Action)
+	}
+	if entries[0].VerificationStatus != "verified" {
+		t.Fatalf("expected verification status verified, got %q", entries[0].VerificationStatus)
+	}
+	if entries[1].Action != logging.ActionInstall {
+		t.Fatalf("expected second action install, got %q", entries[1].Action)
+	}
+	if entries[1].Result != "success" {
+		t.Fatalf("expected install success result, got %q", entries[1].Result)
+	}
+	if entries[1].Duration <= 0 {
+		t.Fatalf("expected positive duration, got %v", entries[1].Duration)
+	}
+}
+
+func TestDefaultEngineInstallEmitsFailureErrorCategory(t *testing.T) {
+	e := engine.NewDefaultEngine([]adapter.Adapter{successAdapter()}, nil)
+	var entries []logging.Entry
+	e.WithLogger(logging.EmitFunc(func(entry logging.Entry) {
+		entries = append(entries, entry)
+	}))
+
+	if _, err := e.Install(&install.Plan{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 log entry, got %d", len(entries))
+	}
+	if entries[0].Action != logging.ActionInstall {
+		t.Fatalf("expected install action, got %q", entries[0].Action)
+	}
+	if entries[0].Result != "failure" {
+		t.Fatalf("expected failure result, got %q", entries[0].Result)
+	}
+	if entries[0].ErrorCategory != "invalid_plan" {
+		t.Fatalf("expected invalid_plan, got %q", entries[0].ErrorCategory)
+	}
+}
+
+func TestDefaultEngineRemoveEmitsFailureErrorCategory(t *testing.T) {
+	a := successAdapter()
+	a.checkErr = errors.New("permission denied while checking backend")
+	e := engine.NewDefaultEngine([]adapter.Adapter{a}, nil)
+	var entries []logging.Entry
+	e.WithLogger(logging.EmitFunc(func(entry logging.Entry) {
+		entries = append(entries, entry)
+	}))
+
+	if _, err := e.Remove("test-app", source.TypeAPT, "test-app"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 log entry, got %d", len(entries))
+	}
+	if entries[0].Action != logging.ActionRemove {
+		t.Fatalf("expected remove action, got %q", entries[0].Action)
+	}
+	if entries[0].Result != "failure" {
+		t.Fatalf("expected failure result, got %q", entries[0].Result)
+	}
+	if entries[0].ErrorCategory != adapter.ErrPermissionDenied {
+		t.Fatalf("expected %q, got %q", adapter.ErrPermissionDenied, entries[0].ErrorCategory)
 	}
 }

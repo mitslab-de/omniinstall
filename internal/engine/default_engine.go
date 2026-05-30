@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	adapter "github.com/mitslab-de/omniinstall/internal/adapters"
 	"github.com/mitslab-de/omniinstall/internal/install"
+	"github.com/mitslab-de/omniinstall/internal/logging"
 	"github.com/mitslab-de/omniinstall/internal/source"
 )
 
@@ -16,6 +18,8 @@ import (
 type DefaultEngine struct {
 	adapters        []adapter.Adapter
 	progressHandler ProgressHandler
+	logger          logging.Emitter
+	now             func() time.Time
 }
 
 // NewDefaultEngine creates a DefaultEngine with the given adapters and an
@@ -24,7 +28,24 @@ func NewDefaultEngine(adapters []adapter.Adapter, handler ProgressHandler) *Defa
 	return &DefaultEngine{
 		adapters:        adapters,
 		progressHandler: handler,
+		now:             time.Now,
 	}
+}
+
+// WithLogger configures structured action logging for engine operations.
+func (e *DefaultEngine) WithLogger(logger logging.Emitter) *DefaultEngine {
+	e.logger = logger
+	return e
+}
+
+func (e *DefaultEngine) emitLog(entry logging.Entry) {
+	if e.logger == nil {
+		return
+	}
+	if entry.Timestamp.IsZero() {
+		entry.Timestamp = e.now()
+	}
+	e.logger.Emit(entry)
 }
 
 // emit sends a progress event if a handler is configured.
@@ -41,6 +62,7 @@ func (e *DefaultEngine) emit(kind EventKind, applicationID, message string) {
 // Install validates the plan, selects the appropriate adapter, executes the
 // installation, and hands off to post-install verification.
 func (e *DefaultEngine) Install(plan *install.Plan) (*Result, error) {
+	start := time.Now()
 	if plan == nil {
 		return nil, errors.New("plan must not be nil")
 	}
@@ -52,12 +74,22 @@ func (e *DefaultEngine) Install(plan *install.Plan) (*Result, error) {
 	e.emit(EventValidating, appID, "Validating install plan")
 	if err := plan.Validate(); err != nil {
 		e.emit(EventFailed, appID, "Plan validation failed: "+err.Error())
-		return &Result{
+		res := &Result{
 			Success:       false,
 			ApplicationID: appID,
 			Message:       "Plan validation failed: " + err.Error(),
 			ErrorCategory: "invalid_plan",
-		}, nil
+		}
+		e.emitLog(logging.Entry{
+			Action:        logging.ActionInstall,
+			ApplicationID: appID,
+			SourceType:    plan.SourceType,
+			Result:        "failure",
+			Duration:      time.Since(start),
+			RiskLevel:     plan.RiskLevel,
+			ErrorCategory: res.ErrorCategory,
+		})
+		return res, nil
 	}
 
 	// 2. Select the adapter.
@@ -65,12 +97,22 @@ func (e *DefaultEngine) Install(plan *install.Plan) (*Result, error) {
 	a, err := e.selectAdapter(plan)
 	if err != nil {
 		e.emit(EventFailed, appID, err.Error())
-		return &Result{
+		res := &Result{
 			Success:       false,
 			ApplicationID: appID,
 			Message:       err.Error(),
 			ErrorCategory: adapter.ErrBackendUnavailable,
-		}, nil
+		}
+		e.emitLog(logging.Entry{
+			Action:        logging.ActionInstall,
+			ApplicationID: appID,
+			SourceType:    plan.SourceType,
+			Result:        "failure",
+			Duration:      time.Since(start),
+			RiskLevel:     plan.RiskLevel,
+			ErrorCategory: res.ErrorCategory,
+		})
+		return res, nil
 	}
 
 	// 2b. Run adapter preflight checks.
@@ -78,12 +120,22 @@ func (e *DefaultEngine) Install(plan *install.Plan) (*Result, error) {
 	if err := preflightCheckAdapter(a, plan.SourceIdentifier); err != nil {
 		msg := "Preflight check failed: " + err.Error()
 		e.emit(EventFailed, appID, msg)
-		return &Result{
+		res := &Result{
 			Success:       false,
 			ApplicationID: appID,
 			Message:       msg,
 			ErrorCategory: categorizePreflightError(err),
-		}, nil
+		}
+		e.emitLog(logging.Entry{
+			Action:        logging.ActionInstall,
+			ApplicationID: appID,
+			SourceType:    plan.SourceType,
+			Result:        "failure",
+			Duration:      time.Since(start),
+			RiskLevel:     plan.RiskLevel,
+			ErrorCategory: res.ErrorCategory,
+		})
+		return res, nil
 	}
 
 	// 3. Execute installation.
@@ -91,46 +143,122 @@ func (e *DefaultEngine) Install(plan *install.Plan) (*Result, error) {
 	result, err := a.Install(plan)
 	if err != nil {
 		e.emit(EventFailed, appID, "Adapter error: "+err.Error())
-		return &Result{
+		res := &Result{
 			Success:       false,
 			ApplicationID: appID,
 			Message:       "Adapter error: " + err.Error(),
 			ErrorCategory: adapter.ErrExecutionFailed,
-		}, nil
+		}
+		e.emitLog(logging.Entry{
+			Action:        logging.ActionInstall,
+			ApplicationID: appID,
+			SourceType:    plan.SourceType,
+			Result:        "failure",
+			Duration:      time.Since(start),
+			RiskLevel:     plan.RiskLevel,
+			ErrorCategory: res.ErrorCategory,
+		})
+		return res, nil
 	}
 	if !result.Success {
 		e.emit(EventFailed, appID, result.Message)
-		return &Result{
+		res := &Result{
 			Success:       false,
 			ApplicationID: appID,
 			Message:       result.Message,
 			ErrorCategory: result.ErrorCategory,
-		}, nil
+		}
+		e.emitLog(logging.Entry{
+			Action:        logging.ActionInstall,
+			ApplicationID: appID,
+			SourceType:    plan.SourceType,
+			Result:        "failure",
+			Duration:      time.Since(start),
+			RiskLevel:     plan.RiskLevel,
+			ErrorCategory: res.ErrorCategory,
+		})
+		return res, nil
 	}
 
 	// 4. Verify installation.
 	e.emit(EventVerifying, appID, fmt.Sprintf("Verifying installation of %s", appID))
+	verifyStart := time.Now()
 	vr, err := a.Verify(plan)
 	if err != nil {
 		// Verification failure is non-fatal but surfaced in the result.
 		e.emit(EventCompleted, appID, fmt.Sprintf("Installed %s (verification error: %s)", appID, err.Error()))
-		return &Result{
+		res := &Result{
 			Success:       true,
 			ApplicationID: appID,
 			Message:       fmt.Sprintf("Installed %s (verification error: %s)", appID, err.Error()),
-		}, nil
+		}
+		e.emitLog(logging.Entry{
+			Action:             logging.ActionVerify,
+			ApplicationID:      appID,
+			SourceType:         plan.SourceType,
+			Result:             "failure",
+			Duration:           time.Since(verifyStart),
+			RiskLevel:          plan.RiskLevel,
+			VerificationStatus: "error",
+			ErrorCategory:      adapter.ErrExecutionFailed,
+		})
+		e.emitLog(logging.Entry{
+			Action:        logging.ActionInstall,
+			ApplicationID: appID,
+			SourceType:    plan.SourceType,
+			Result:        "success",
+			Duration:      time.Since(start),
+			RiskLevel:     plan.RiskLevel,
+		})
+		return res, nil
 	}
 
 	if !vr.Verified {
 		e.emit(EventCompleted, appID, fmt.Sprintf("Installed %s (verification failed: %s)", appID, vr.Details))
-		return &Result{
+		res := &Result{
 			Success:       true,
 			ApplicationID: appID,
 			Message:       fmt.Sprintf("Installed %s (verification failed: %s)", appID, vr.Details),
-		}, nil
+		}
+		e.emitLog(logging.Entry{
+			Action:             logging.ActionVerify,
+			ApplicationID:      appID,
+			SourceType:         plan.SourceType,
+			Result:             "failure",
+			Duration:           time.Since(verifyStart),
+			RiskLevel:          plan.RiskLevel,
+			VerificationStatus: "failed",
+			ErrorCategory:      "verification_failed",
+		})
+		e.emitLog(logging.Entry{
+			Action:        logging.ActionInstall,
+			ApplicationID: appID,
+			SourceType:    plan.SourceType,
+			Result:        "success",
+			Duration:      time.Since(start),
+			RiskLevel:     plan.RiskLevel,
+		})
+		return res, nil
 	}
 
 	e.emit(EventCompleted, appID, fmt.Sprintf("Successfully installed %s", appID))
+	e.emitLog(logging.Entry{
+		Action:             logging.ActionVerify,
+		ApplicationID:      appID,
+		SourceType:         plan.SourceType,
+		Result:             "success",
+		Duration:           time.Since(verifyStart),
+		RiskLevel:          plan.RiskLevel,
+		VerificationStatus: "verified",
+	})
+	e.emitLog(logging.Entry{
+		Action:        logging.ActionInstall,
+		ApplicationID: appID,
+		SourceType:    plan.SourceType,
+		Result:        "success",
+		Duration:      time.Since(start),
+		RiskLevel:     plan.RiskLevel,
+	})
 	return &Result{
 		Success:       true,
 		ApplicationID: appID,
@@ -141,6 +269,7 @@ func (e *DefaultEngine) Install(plan *install.Plan) (*Result, error) {
 // Remove removes the application identified by applicationID using the source
 // metadata recorded at install time.
 func (e *DefaultEngine) Remove(applicationID string, sourceType source.Type, sourceIdentifier string) (*Result, error) {
+	start := time.Now()
 	if applicationID == "" {
 		return nil, errors.New("applicationID must not be empty")
 	}
@@ -157,35 +286,62 @@ func (e *DefaultEngine) Remove(applicationID string, sourceType source.Type, sou
 	if a == nil {
 		msg := fmt.Sprintf("no available adapter for source type %s", sourceType)
 		e.emit(EventFailed, applicationID, msg)
-		return &Result{
+		res := &Result{
 			Success:       false,
 			ApplicationID: applicationID,
 			Message:       msg,
 			ErrorCategory: adapter.ErrBackendUnavailable,
-		}, nil
+		}
+		e.emitLog(logging.Entry{
+			Action:        logging.ActionRemove,
+			ApplicationID: applicationID,
+			SourceType:    sourceType,
+			Result:        "failure",
+			Duration:      time.Since(start),
+			ErrorCategory: res.ErrorCategory,
+		})
+		return res, nil
 	}
 
 	if err := preflightCheckAdapter(a, sourceIdentifier); err != nil {
 		msg := "Preflight check failed: " + err.Error()
 		e.emit(EventFailed, applicationID, msg)
-		return &Result{
+		res := &Result{
 			Success:       false,
 			ApplicationID: applicationID,
 			Message:       msg,
 			ErrorCategory: categorizePreflightError(err),
-		}, nil
+		}
+		e.emitLog(logging.Entry{
+			Action:        logging.ActionRemove,
+			ApplicationID: applicationID,
+			SourceType:    sourceType,
+			Result:        "failure",
+			Duration:      time.Since(start),
+			ErrorCategory: res.ErrorCategory,
+		})
+		return res, nil
 	}
 
 	e.emit(EventExecuting, applicationID, fmt.Sprintf("Removing %s via %s", sourceIdentifier, a.Name()))
 	result, err := a.Remove(sourceIdentifier)
 	if err != nil {
 		e.emit(EventFailed, applicationID, "Adapter error: "+err.Error())
-		return &Result{
+		res := &Result{
 			Success:       false,
 			ApplicationID: applicationID,
 			Message:       "Adapter error: " + err.Error(),
 			ErrorCategory: adapter.ErrExecutionFailed,
-		}, nil
+		}
+		e.emitLog(logging.Entry{
+			Action:        logging.ActionRemove,
+			ApplicationID: applicationID,
+			SourceType:    sourceType,
+			Result:        "failure",
+			Duration:      time.Since(start),
+			ErrorCategory: res.ErrorCategory,
+		})
+		return res, nil
 	}
 
 	if result.Success {
@@ -194,12 +350,25 @@ func (e *DefaultEngine) Remove(applicationID string, sourceType source.Type, sou
 		e.emit(EventFailed, applicationID, result.Message)
 	}
 
-	return &Result{
+	res := &Result{
 		Success:       result.Success,
 		ApplicationID: applicationID,
 		Message:       result.Message,
 		ErrorCategory: result.ErrorCategory,
-	}, nil
+	}
+	entryResult := "success"
+	if !res.Success {
+		entryResult = "failure"
+	}
+	e.emitLog(logging.Entry{
+		Action:        logging.ActionRemove,
+		ApplicationID: applicationID,
+		SourceType:    sourceType,
+		Result:        entryResult,
+		Duration:      time.Since(start),
+		ErrorCategory: res.ErrorCategory,
+	})
+	return res, nil
 }
 
 // selectAdapter returns the first available adapter that can handle the source

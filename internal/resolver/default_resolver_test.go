@@ -3,6 +3,7 @@ package resolver_test
 import (
 	"testing"
 
+	"github.com/mitslab-de/omniinstall/internal/logging"
 	"github.com/mitslab-de/omniinstall/internal/resolver"
 	"github.com/mitslab-de/omniinstall/internal/source"
 )
@@ -347,4 +348,52 @@ func TestDefaultResolverDeterministicAcrossManagerOrder(t *testing.T) {
 
 func TestDefaultResolverImplementsInterface(t *testing.T) {
 	var _ resolver.Resolver = resolver.NewDefaultResolver()
+}
+
+func TestDefaultResolverEmitsStructuredLogOnSuccess(t *testing.T) {
+	r := resolver.NewDefaultResolver()
+	var entries []logging.Entry
+	r.WithLogger(logging.EmitFunc(func(entry logging.Entry) {
+		entries = append(entries, entry)
+	}))
+
+	if _, err := r.Resolve("test-app", []source.Source{aptSource}, sysWithAll()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 log entry, got %d", len(entries))
+	}
+	if entries[0].Action != logging.ActionResolve {
+		t.Fatalf("expected action %q, got %q", logging.ActionResolve, entries[0].Action)
+	}
+	if entries[0].Result != "success" {
+		t.Fatalf("expected success result, got %q", entries[0].Result)
+	}
+	if entries[0].SourceType != source.TypeAPT {
+		t.Fatalf("expected source type %q, got %q", source.TypeAPT, entries[0].SourceType)
+	}
+	if entries[0].Duration <= 0 {
+		t.Fatalf("expected positive duration, got %v", entries[0].Duration)
+	}
+}
+
+func TestDefaultResolverEmitsStructuredLogOnFailure(t *testing.T) {
+	r := resolver.NewDefaultResolver()
+	var entries []logging.Entry
+	r.WithLogger(logging.EmitFunc(func(entry logging.Entry) {
+		entries = append(entries, entry)
+	}))
+
+	if _, err := r.Resolve("", []source.Source{aptSource}, sysWithAll()); err == nil {
+		t.Fatal("expected error for empty applicationID")
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 log entry, got %d", len(entries))
+	}
+	if entries[0].Result != "failure" {
+		t.Fatalf("expected failure result, got %q", entries[0].Result)
+	}
+	if entries[0].ErrorCategory != "invalid_application_id" {
+		t.Fatalf("expected invalid_application_id, got %q", entries[0].ErrorCategory)
+	}
 }

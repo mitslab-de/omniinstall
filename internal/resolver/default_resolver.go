@@ -3,19 +3,40 @@ package resolver
 import (
 	"errors"
 	"sort"
+	"time"
 
 	"github.com/mitslab-de/omniinstall/internal/install"
+	"github.com/mitslab-de/omniinstall/internal/logging"
 	"github.com/mitslab-de/omniinstall/internal/source"
 )
 
 // DefaultResolver is the standard implementation of the Resolver interface.
 // It ranks sources by type priority, trust level, risk level, and user
 // preferences, producing a deterministic ordered recommendation list.
-type DefaultResolver struct{}
+type DefaultResolver struct {
+	logger logging.Emitter
+	now    func() time.Time
+}
 
 // NewDefaultResolver creates a DefaultResolver with default settings.
 func NewDefaultResolver() *DefaultResolver {
-	return &DefaultResolver{}
+	return &DefaultResolver{now: time.Now}
+}
+
+// WithLogger configures structured action logging for resolver operations.
+func (r *DefaultResolver) WithLogger(logger logging.Emitter) *DefaultResolver {
+	r.logger = logger
+	return r
+}
+
+func (r *DefaultResolver) emitLog(entry logging.Entry) {
+	if r.logger == nil {
+		return
+	}
+	if entry.Timestamp.IsZero() {
+		entry.Timestamp = r.now()
+	}
+	r.logger.Emit(entry)
 }
 
 // Resolve ranks all available sources for the given applicationID and returns
@@ -27,8 +48,17 @@ func (r *DefaultResolver) Resolve(
 	available []source.Source,
 	ctx SystemContext,
 ) ([]Recommendation, error) {
+	start := time.Now()
 	if applicationID == "" {
-		return nil, errors.New("applicationID must not be empty")
+		err := errors.New("applicationID must not be empty")
+		r.emitLog(logging.Entry{
+			Action:        logging.ActionResolve,
+			ApplicationID: applicationID,
+			Result:        "failure",
+			Duration:      time.Since(start),
+			ErrorCategory: "invalid_application_id",
+		})
+		return nil, err
 	}
 
 	type scored struct {
@@ -72,6 +102,17 @@ func (r *DefaultResolver) Resolve(
 			Explanation: exp,
 		})
 	}
+
+	entry := logging.Entry{
+		Action:        logging.ActionResolve,
+		ApplicationID: applicationID,
+		Result:        "success",
+		Duration:      time.Since(start),
+	}
+	if len(recommendations) > 0 && recommendations[0].Plan != nil {
+		entry.SourceType = recommendations[0].Plan.SourceType
+	}
+	r.emitLog(entry)
 
 	return recommendations, nil
 }

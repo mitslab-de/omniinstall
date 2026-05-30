@@ -5,6 +5,7 @@ import (
 
 	"github.com/mitslab-de/omniinstall/internal/app"
 	"github.com/mitslab-de/omniinstall/internal/discovery"
+	"github.com/mitslab-de/omniinstall/internal/logging"
 )
 
 // testCatalog builds a small catalog for engine tests.
@@ -296,6 +297,52 @@ func TestLookup_UnknownID(t *testing.T) {
 	}
 	if a != nil {
 		t.Errorf("expected nil for unknown id, got %q", a.ID)
+	}
+}
+
+func TestSearch_EmitsStructuredLogOnSuccess(t *testing.T) {
+	e := newEngine(t)
+	var entries []logging.Entry
+	e.WithLogger(logging.EmitFunc(func(entry logging.Entry) {
+		entries = append(entries, entry)
+	}))
+
+	if _, err := e.Search("obs-studio"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 log entry, got %d", len(entries))
+	}
+	if entries[0].Action != logging.ActionSearch {
+		t.Fatalf("expected action %q, got %q", logging.ActionSearch, entries[0].Action)
+	}
+	if entries[0].Result != "success" {
+		t.Fatalf("expected success result, got %q", entries[0].Result)
+	}
+	if entries[0].Duration <= 0 {
+		t.Fatalf("expected positive duration, got %v", entries[0].Duration)
+	}
+}
+
+func TestSearch_EmitsStructuredLogOnFailure(t *testing.T) {
+	e := newEngine(t)
+	var entries []logging.Entry
+	e.WithLogger(logging.EmitFunc(func(entry logging.Entry) {
+		entries = append(entries, entry)
+	}))
+
+	if _, err := e.Search(" "); err == nil {
+		t.Fatal("expected error for empty query")
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 log entry, got %d", len(entries))
+	}
+	if entries[0].Result != "failure" {
+		t.Fatalf("expected failure result, got %q", entries[0].Result)
+	}
+	if entries[0].ErrorCategory != "invalid_query" {
+		t.Fatalf("expected invalid_query, got %q", entries[0].ErrorCategory)
 	}
 }
 
