@@ -65,6 +65,13 @@ func TestFixture_Remove_NotInstalled_ReturnsError(t *testing.T) {
 	_ = f.runExpectError(t, "remove", "unknown-app")
 }
 
+func TestFixture_UnknownCommand_ReturnsError(t *testing.T) {
+	f := newFixture(t).withAPT()
+	if err := f.run("definitely-unknown-command"); err == nil {
+		t.Fatal("expected error for unknown fixture command")
+	}
+}
+
 func TestFixture_OutputReset_ClearsBetweenCommands(t *testing.T) {
 	f := newFixture(t).withAPT()
 	f.mustRun(t, "search", "git")

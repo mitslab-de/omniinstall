@@ -10,6 +10,7 @@ package main
 //	if !strings.Contains(f.Output(), "Git") { t.Error(...) }
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -186,7 +187,7 @@ func (f *CLIFixture) run(cmd string, args ...string) error {
 	case "explain":
 		return a.explain(arg0)
 	default:
-		return nil
+		return fmt.Errorf("unsupported fixture command %q", cmd)
 	}
 }
 
