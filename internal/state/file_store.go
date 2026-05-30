@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 )
 
 // stateFileVersion is the schema version written to and expected in state files.
 const stateFileVersion = "1.0"
+const stateFileSupportedMajor = 1
 
 // stateFile is the on-disk format for the local state store.
 type stateFile struct {
@@ -128,10 +131,40 @@ func (s *FileStore) load() (*stateFile, error) {
 	if err := json.Unmarshal(data, &sf); err != nil {
 		return nil, fmt.Errorf("parsing state file %s: %w", s.path, err)
 	}
+	if err := validateStateSchemaVersion(sf.SchemaVersion); err != nil {
+		return nil, fmt.Errorf("state file %s: %w", s.path, err)
+	}
 	if sf.Installations == nil {
 		sf.Installations = make(map[string]LocalInstallation)
 	}
 	return &sf, nil
+}
+
+func validateStateSchemaVersion(version string) error {
+	// Backward-compatible: legacy files may not have schema_version yet.
+	if version == "" {
+		return nil
+	}
+
+	parts := strings.Split(version, ".")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid schema_version %q (expected <major>.<minor>)", version)
+	}
+
+	major, err := strconv.Atoi(parts[0])
+	if err != nil || major < 0 {
+		return fmt.Errorf("invalid schema_version %q (invalid major version)", version)
+	}
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil || minor < 0 {
+		return fmt.Errorf("invalid schema_version %q (invalid minor version)", version)
+	}
+
+	if major != stateFileSupportedMajor {
+		return fmt.Errorf("unsupported schema_version %q (supported major version: %d)", version, stateFileSupportedMajor)
+	}
+
+	return nil
 }
 
 // save writes the state file to disk atomically (via a temp file + rename).
