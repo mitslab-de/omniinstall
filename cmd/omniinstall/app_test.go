@@ -181,6 +181,77 @@ func TestAppInstall_NoCompatibleSource(t *testing.T) {
 	}
 }
 
+func TestAppInstall_HighRiskRequiresConfirmation_Confirmed(t *testing.T) {
+	buf := &strings.Builder{}
+	store := newMockStore()
+	eng := successEngine(source.TypeAPT)
+	app := newAppForTest(buf, eng, store, aptManagers())
+	app.sources["git"] = []source.Source{
+		{
+			ApplicationID:    "git",
+			SourceType:       source.TypeAPT,
+			SourceIdentifier: "git",
+			TrustLevel:       source.TrustVerified,
+			RiskLevel:        source.RiskHigh,
+		},
+	}
+	app.in = strings.NewReader("yes\n")
+
+	if err := app.install("git"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, found, _ := store.Get("git"); !found {
+		t.Fatal("expected git to be recorded in local state")
+	}
+}
+
+func TestAppInstall_HighRiskRequiresConfirmation_Denied(t *testing.T) {
+	buf := &strings.Builder{}
+	store := newMockStore()
+	eng := successEngine(source.TypeAPT)
+	app := newAppForTest(buf, eng, store, aptManagers())
+	app.sources["git"] = []source.Source{
+		{
+			ApplicationID:    "git",
+			SourceType:       source.TypeAPT,
+			SourceIdentifier: "git",
+			TrustLevel:       source.TrustVerified,
+			RiskLevel:        source.RiskHigh,
+		},
+	}
+	app.in = strings.NewReader("no\n")
+
+	err := app.install("git")
+	if err == nil || !strings.Contains(err.Error(), "cancelled by user") {
+		t.Fatalf("expected cancellation error, got: %v", err)
+	}
+	if _, found, _ := store.Get("git"); found {
+		t.Fatal("did not expect git to be recorded in local state")
+	}
+}
+
+func TestAppInstall_HighRiskRequiresInteractiveInput(t *testing.T) {
+	buf := &strings.Builder{}
+	store := newMockStore()
+	eng := successEngine(source.TypeAPT)
+	app := newAppForTest(buf, eng, store, aptManagers())
+	app.sources["git"] = []source.Source{
+		{
+			ApplicationID:    "git",
+			SourceType:       source.TypeAPT,
+			SourceIdentifier: "git",
+			TrustLevel:       source.TrustVerified,
+			RiskLevel:        source.RiskHigh,
+		},
+	}
+	app.in = nil
+
+	err := app.install("git")
+	if err == nil || !strings.Contains(err.Error(), "requires interactive confirmation") {
+		t.Fatalf("expected interactive confirmation error, got: %v", err)
+	}
+}
+
 func TestAppRemove_Success(t *testing.T) {
 	buf := &strings.Builder{}
 	store := newMockStore()

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -29,6 +30,7 @@ type App struct {
 	store     state.Store
 	sources   map[string][]source.Source
 	ctx       resolver.SystemContext
+	in        io.Reader
 	out       io.Writer
 }
 
@@ -57,6 +59,7 @@ func newApp(out io.Writer) *App {
 		ctx: resolver.SystemContext{
 			AvailableManagers: managers,
 		},
+		in:  os.Stdin,
 		out: out,
 	}
 }
@@ -140,6 +143,15 @@ func (a *App) install(appID string) error {
 	fmt.Fprintf(a.out, "Installing %s...\n", app.DisplayName)
 	fmt.Fprintf(a.out, "  Source: %s\n", rec.Plan.SourceType)
 	fmt.Fprintf(a.out, "  Reason: %s\n", rec.Explanation)
+	if rec.Plan.RequiresConfirmation {
+		confirmed, confirmErr := a.confirmHighRiskInstall(app.DisplayName, rec.Plan.RiskLevel)
+		if confirmErr != nil {
+			return confirmErr
+		}
+		if !confirmed {
+			return fmt.Errorf("installation cancelled by user")
+		}
+	}
 
 	result, err := a.engine.Install(rec.Plan)
 	if err != nil {
@@ -297,6 +309,37 @@ func handleProgress(out io.Writer) engine.ProgressHandler {
 	}
 }
 
+func (a *App) confirmHighRiskInstall(displayName string, riskLevel source.RiskLevel) (bool, error) {
+	if !isInteractiveInput(a.in) {
+		return false, fmt.Errorf("high-risk installation requires interactive confirmation")
+	}
+
+	fmt.Fprintf(a.out, "  Warning: This action is marked as %s risk.\n", riskLevel)
+	fmt.Fprintf(a.out, "  Type 'yes' to continue installing %s: ", displayName)
+
+	reader := bufio.NewReader(a.in)
+	answer, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, fmt.Errorf("failed to read confirmation input: %w", err)
+	}
+	return strings.EqualFold(strings.TrimSpace(answer), "yes"), nil
+}
+
+func isInteractiveInput(in io.Reader) bool {
+	if in == nil {
+		return false
+	}
+	file, ok := in.(*os.File)
+	if !ok {
+		return true
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return (info.Mode() & os.ModeCharDevice) != 0
+}
+
 // newAppWithStore creates an App with a custom store for testing.
 func newAppWithStore(out io.Writer, store state.Store, managers []source.Type) *App {
 	adapters := []adapter.Adapter{
@@ -312,6 +355,7 @@ func newAppWithStore(out io.Writer, store state.Store, managers []source.Type) *
 		ctx: resolver.SystemContext{
 			AvailableManagers: managers,
 		},
+		in:  os.Stdin,
 		out: out,
 	}
 }
@@ -327,6 +371,7 @@ func newAppForTest(out io.Writer, eng *engine.DefaultEngine, store state.Store, 
 		ctx: resolver.SystemContext{
 			AvailableManagers: managers,
 		},
+		in:  os.Stdin,
 		out: out,
 	}
 }
