@@ -17,7 +17,10 @@ type InstalledState string
 const (
 	StateInstalled    InstalledState = "installed"
 	StateNotInstalled InstalledState = "not-installed"
-	StateUnknown      InstalledState = "unknown"
+	// StatePartial indicates the package is only partially installed or
+	// configured (e.g. half-installed, unpacked, triggers-pending).
+	StatePartial InstalledState = "partial"
+	StateUnknown  InstalledState = "unknown"
 )
 
 // Result is the structured outcome of an adapter operation.

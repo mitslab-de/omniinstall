@@ -91,18 +91,61 @@ func (a *Adapter) CanHandle(sourceType source.Type) bool {
 }
 
 // CheckInstalled returns the installation state for the given package name.
+//
+// dpkg-query -W -f '${Status}' returns one of:
+//
+//	"<want> <eflag> <status>"
+//
+// where status is one of: not-installed, config-files, unpacked,
+// half-configured, half-installed, triggers-awaited, triggers-pending,
+// installed.
+//
+// A non-zero exit code means the package is unknown to dpkg (not installed).
+// An empty output with exit 0 is treated the same as not-installed.
 func (a *Adapter) CheckInstalled(sourceIdentifier string) (adapter.InstalledState, error) {
 	out, exitCode, err := a.exec.Run("dpkg-query", "-W", "-f", "${Status}", sourceIdentifier)
+	// An execution error that is unrelated to the package status (i.e. the
+	// command could not be launched at all) is returned only when exit code
+	// is 0, because a non-zero exit code is the normal "not found" path.
 	if err != nil && exitCode == 0 {
-		return adapter.StateUnknown, fmt.Errorf("dpkg-query readiness check failed: %w", err)
+		return adapter.StateUnknown, fmt.Errorf("dpkg-query failed: %w", err)
 	}
+	// Exit codes 1/2 from dpkg-query mean the package is not in the dpkg db.
 	if exitCode != 0 {
 		return adapter.StateNotInstalled, nil
 	}
-	if strings.Contains(out, "install ok installed") {
-		return adapter.StateInstalled, nil
+	return parseDpkgStatus(strings.TrimSpace(out))
+}
+
+// parseDpkgStatus interprets a dpkg status string of the form
+// "<want> <eflag> <status>" and maps it to an InstalledState.
+//
+// If the status field cannot be determined (empty output, unexpected format),
+// StateUnknown is returned with a descriptive error.
+func parseDpkgStatus(raw string) (adapter.InstalledState, error) {
+	if raw == "" {
+		// dpkg-query returned nothing; package unknown.
+		return adapter.StateNotInstalled, nil
 	}
-	return adapter.StateNotInstalled, nil
+	parts := strings.Fields(raw)
+	if len(parts) < 3 {
+		return adapter.StateUnknown, fmt.Errorf("unexpected dpkg status output: %q", raw)
+	}
+	statusField := parts[2]
+	switch statusField {
+	case "installed":
+		return adapter.StateInstalled, nil
+	case "not-installed", "config-files":
+		// config-files means the package was removed but config remains.
+		return adapter.StateNotInstalled, nil
+	case "half-installed", "unpacked", "half-configured",
+		"triggers-awaited", "triggers-pending":
+		// Partial / in-progress states: something is on disk but the
+		// installation is not complete.
+		return adapter.StatePartial, nil
+	default:
+		return adapter.StateUnknown, fmt.Errorf("unrecognised dpkg status field: %q", statusField)
+	}
 }
 
 // Install installs the package described in the plan using apt-get.
