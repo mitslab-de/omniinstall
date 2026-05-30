@@ -83,7 +83,10 @@ func (a *Adapter) CanHandle(sourceType source.Type) bool {
 
 // CheckInstalled returns the installation state for the given Flatpak application ID.
 func (a *Adapter) CheckInstalled(sourceIdentifier string) (adapter.InstalledState, error) {
-	out, exitCode, _ := a.exec.Run("flatpak", "info", sourceIdentifier)
+	out, exitCode, err := a.exec.Run("flatpak", "info", sourceIdentifier)
+	if err != nil && exitCode == 0 {
+		return adapter.StateUnknown, fmt.Errorf("flatpak readiness check failed: %w", err)
+	}
 	if exitCode != 0 || strings.TrimSpace(out) == "" {
 		return adapter.StateNotInstalled, nil
 	}

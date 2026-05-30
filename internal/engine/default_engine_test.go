@@ -1,6 +1,7 @@
 package engine_test
 
 import (
+	"errors"
 	"testing"
 
 	adapter "github.com/mitslab-de/omniinstall/internal/adapters"
@@ -151,6 +152,38 @@ func TestDefaultEngineInstallAdapterError(t *testing.T) {
 	}
 }
 
+func TestDefaultEngineInstallPreflightBackendUnavailable(t *testing.T) {
+	a := successAdapter()
+	a.checkErr = errors.New("backend probe failed")
+	e := engine.NewDefaultEngine([]adapter.Adapter{a}, nil)
+	result, err := e.Install(goodPlan)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Success {
+		t.Fatal("expected preflight failure")
+	}
+	if result.ErrorCategory != adapter.ErrBackendUnavailable {
+		t.Fatalf("expected %s, got %s", adapter.ErrBackendUnavailable, result.ErrorCategory)
+	}
+}
+
+func TestDefaultEngineInstallPreflightPermissionDenied(t *testing.T) {
+	a := successAdapter()
+	a.checkErr = errors.New("permission denied while checking backend")
+	e := engine.NewDefaultEngine([]adapter.Adapter{a}, nil)
+	result, err := e.Install(goodPlan)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Success {
+		t.Fatal("expected preflight failure")
+	}
+	if result.ErrorCategory != adapter.ErrPermissionDenied {
+		t.Fatalf("expected %s, got %s", adapter.ErrPermissionDenied, result.ErrorCategory)
+	}
+}
+
 func TestDefaultEngineInstallVerificationHandoff(t *testing.T) {
 	var events []engine.ProgressEvent
 	handler := func(ev engine.ProgressEvent) { events = append(events, ev) }
@@ -181,6 +214,7 @@ func TestDefaultEngineProgressEvents(t *testing.T) {
 		engine.EventStarted,
 		engine.EventValidating,
 		engine.EventSelectingAdapter,
+		engine.EventValidating,
 		engine.EventExecuting,
 		engine.EventVerifying,
 		engine.EventCompleted,
@@ -231,6 +265,22 @@ func TestDefaultEngineRemoveNoAdapter(t *testing.T) {
 	}
 	if result.ErrorCategory != adapter.ErrBackendUnavailable {
 		t.Errorf("expected error_category=%s, got %s", adapter.ErrBackendUnavailable, result.ErrorCategory)
+	}
+}
+
+func TestDefaultEngineRemovePreflightFailure(t *testing.T) {
+	a := successAdapter()
+	a.checkErr = errors.New("backend readiness check failed")
+	e := engine.NewDefaultEngine([]adapter.Adapter{a}, nil)
+	result, err := e.Remove("test-app", source.TypeAPT, "test-app")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Success {
+		t.Fatal("expected preflight failure")
+	}
+	if result.ErrorCategory != adapter.ErrBackendUnavailable {
+		t.Fatalf("expected %s, got %s", adapter.ErrBackendUnavailable, result.ErrorCategory)
 	}
 }
 

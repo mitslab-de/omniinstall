@@ -133,6 +133,22 @@ func TestCheckInstalledNotFound(t *testing.T) {
 	}
 }
 
+func TestCheckInstalledReadinessError(t *testing.T) {
+	e := &fakeExecutor{
+		runFn: func(name string, args ...string) (string, int, error) {
+			return "", 0, errors.New("permission denied")
+		},
+	}
+	a := newTestAdapter(e)
+	state, err := a.CheckInstalled("com.obsproject.Studio")
+	if err == nil {
+		t.Fatal("expected readiness error")
+	}
+	if state != adapter.StateUnknown {
+		t.Fatalf("expected StateUnknown, got %s", state)
+	}
+}
+
 func TestInstallSuccess(t *testing.T) {
 	e := &fakeExecutor{
 		runFn: func(name string, args ...string) (string, int, error) {

@@ -92,7 +92,10 @@ func (a *Adapter) CanHandle(sourceType source.Type) bool {
 
 // CheckInstalled returns the installation state for the given package name.
 func (a *Adapter) CheckInstalled(sourceIdentifier string) (adapter.InstalledState, error) {
-	out, exitCode, _ := a.exec.Run("dpkg-query", "-W", "-f", "${Status}", sourceIdentifier)
+	out, exitCode, err := a.exec.Run("dpkg-query", "-W", "-f", "${Status}", sourceIdentifier)
+	if err != nil && exitCode == 0 {
+		return adapter.StateUnknown, fmt.Errorf("dpkg-query readiness check failed: %w", err)
+	}
 	if exitCode != 0 {
 		return adapter.StateNotInstalled, nil
 	}

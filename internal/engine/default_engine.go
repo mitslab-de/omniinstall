@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	adapter "github.com/mitslab-de/omniinstall/internal/adapters"
 	"github.com/mitslab-de/omniinstall/internal/install"
@@ -69,6 +70,19 @@ func (e *DefaultEngine) Install(plan *install.Plan) (*Result, error) {
 			ApplicationID: appID,
 			Message:       err.Error(),
 			ErrorCategory: adapter.ErrBackendUnavailable,
+		}, nil
+	}
+
+	// 2b. Run adapter preflight checks.
+	e.emit(EventValidating, appID, fmt.Sprintf("Running preflight checks for %s", a.Name()))
+	if err := preflightCheckAdapter(a, plan.SourceIdentifier); err != nil {
+		msg := "Preflight check failed: " + err.Error()
+		e.emit(EventFailed, appID, msg)
+		return &Result{
+			Success:       false,
+			ApplicationID: appID,
+			Message:       msg,
+			ErrorCategory: categorizePreflightError(err),
 		}, nil
 	}
 
@@ -151,6 +165,17 @@ func (e *DefaultEngine) Remove(applicationID string, sourceType source.Type, sou
 		}, nil
 	}
 
+	if err := preflightCheckAdapter(a, sourceIdentifier); err != nil {
+		msg := "Preflight check failed: " + err.Error()
+		e.emit(EventFailed, applicationID, msg)
+		return &Result{
+			Success:       false,
+			ApplicationID: applicationID,
+			Message:       msg,
+			ErrorCategory: categorizePreflightError(err),
+		}, nil
+	}
+
 	e.emit(EventExecuting, applicationID, fmt.Sprintf("Removing %s via %s", sourceIdentifier, a.Name()))
 	result, err := a.Remove(sourceIdentifier)
 	if err != nil {
@@ -197,4 +222,23 @@ func (e *DefaultEngine) selectRemovalAdapter(sourceType source.Type) adapter.Ada
 		}
 	}
 	return nil
+}
+
+func preflightCheckAdapter(a adapter.Adapter, sourceIdentifier string) error {
+	if !a.IsAvailable() {
+		return fmt.Errorf("backend %s is not available", a.Name())
+	}
+	_, err := a.CheckInstalled(sourceIdentifier)
+	if err != nil {
+		return fmt.Errorf("backend readiness check failed: %w", err)
+	}
+	return nil
+}
+
+func categorizePreflightError(err error) string {
+	lower := strings.ToLower(err.Error())
+	if strings.Contains(lower, "permission denied") || strings.Contains(lower, "operation not permitted") {
+		return adapter.ErrPermissionDenied
+	}
+	return adapter.ErrBackendUnavailable
 }
