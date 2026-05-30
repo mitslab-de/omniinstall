@@ -34,11 +34,22 @@ func explain(s source.Source, score int, ctx SystemContext) string {
 
 	switch s.TrustLevel {
 	case source.TrustOfficial:
-		parts = append(parts, "and is from an official source")
+		parts = append(parts, "from an official source")
 	case source.TrustVerified:
-		parts = append(parts, "and has been verified")
+		parts = append(parts, "from a verified source")
 	case source.TrustCommunity:
-		parts = append(parts, "and is from a community source")
+		parts = append(parts, "from a community source")
+	}
+
+	switch s.RiskLevel {
+	case source.RiskLow:
+		parts = append(parts, "with low installation risk")
+	case source.RiskMedium:
+		parts = append(parts, "with medium installation risk")
+	case source.RiskHigh:
+		parts = append(parts, "with high installation risk — review carefully")
+	case source.RiskCritical:
+		parts = append(parts, "with critical installation risk — not recommended")
 	}
 
 	if ctx.UserPreferences.PreferNative && nativeTypes[s.SourceType] {
@@ -48,7 +59,7 @@ func explain(s source.Source, score int, ctx SystemContext) string {
 		parts = append(parts, "(preferred: Flatpak)")
 	}
 
-	return strings.Join(parts, " ") + "."
+	return strings.Join(parts, ", ") + "."
 }
 
 // explainAlternative produces a shorter explanation for an alternative source.

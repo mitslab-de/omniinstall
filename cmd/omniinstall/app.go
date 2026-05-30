@@ -62,6 +62,9 @@ type explainJSONOutput struct {
 	DisplayName            string                   `json:"display_name"`
 	RecommendedSourceType  source.Type              `json:"recommended_source_type"`
 	RecommendedExplanation string                   `json:"recommended_explanation"`
+	TrustLevel             source.TrustLevel        `json:"trust_level,omitempty"`
+	RiskLevel              source.RiskLevel         `json:"risk_level,omitempty"`
+	RequiresPrivilege      bool                     `json:"requires_privilege,omitempty"`
 	Alternatives           []explainJSONAlternative `json:"alternatives"`
 	Conflicts              []explainJSONConflict    `json:"conflicts"`
 }
@@ -309,8 +312,17 @@ func (a *App) explain(appID string) error {
 		return nil
 	}
 
-	fmt.Fprintf(a.out, "  Recommended: %s\n", recs[0].Plan.SourceType)
-	fmt.Fprintf(a.out, "  %s\n", recs[0].Explanation)
+	fmt.Fprintf(a.out, "  Recommended: %s (%s)\n", recs[0].Plan.SourceType, recs[0].Plan.SourceIdentifier)
+
+	// Show enriched metadata for the top recommendation.
+	if topSrc, ok := findSource(srcs, recs[0].Plan.SourceType, recs[0].Plan.SourceIdentifier); ok {
+		fmt.Fprintf(a.out, "  Trust:       %s\n", topSrc.TrustLevel)
+		fmt.Fprintf(a.out, "  Risk:        %s\n", topSrc.RiskLevel)
+	}
+	if recs[0].Plan.RequiresPrivilege {
+		fmt.Fprintf(a.out, "  Privilege:   required (sudo)\n")
+	}
+	fmt.Fprintf(a.out, "\n  %s\n", recs[0].Explanation)
 
 	if len(recs) > 1 {
 		fmt.Fprintf(a.out, "\n  Alternatives:\n")
@@ -365,6 +377,11 @@ func (a *App) explainJSON(appID string) error {
 	if len(recs) > 0 && recs[0].Plan != nil {
 		out.RecommendedSourceType = recs[0].Plan.SourceType
 		out.RecommendedExplanation = recs[0].Explanation
+		out.RiskLevel = recs[0].Plan.RiskLevel
+		out.RequiresPrivilege = recs[0].Plan.RequiresPrivilege
+		if topSrc, ok := findSource(srcs, recs[0].Plan.SourceType, recs[0].Plan.SourceIdentifier); ok {
+			out.TrustLevel = topSrc.TrustLevel
+		}
 	}
 	if len(recs) > 1 {
 		for _, alt := range recs[1:] {
@@ -530,6 +547,17 @@ func newAppForTest(out io.Writer, eng *engine.DefaultEngine, store state.Store, 
 
 // Ensure App uses os.Stdout for the production path.
 var _ = os.Stdout
+
+// findSource returns the first source from srcs that matches the given type
+// and identifier, along with a boolean indicating whether it was found.
+func findSource(srcs []source.Source, t source.Type, identifier string) (source.Source, bool) {
+	for _, s := range srcs {
+		if s.SourceType == t && s.SourceIdentifier == identifier {
+			return s, true
+		}
+	}
+	return source.Source{}, false
+}
 
 func writeJSON(out io.Writer, v any) error {
 	enc := json.NewEncoder(out)

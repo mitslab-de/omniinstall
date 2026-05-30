@@ -486,3 +486,95 @@ func TestAppList_JSONOutput(t *testing.T) {
 		t.Fatalf("unexpected applications payload: %+v", out.Applications)
 	}
 }
+
+func TestAppExplain_EnrichedTextOutputShowsTrustAndRisk(t *testing.T) {
+buf := &strings.Builder{}
+app := newAppWithStore(buf, newMockStore(), aptManagers())
+if err := app.explain("obs-studio"); err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+out := buf.String()
+if !strings.Contains(out, "Trust:") {
+t.Errorf("expected output to contain 'Trust:' label, got:\n%s", out)
+}
+if !strings.Contains(out, "Risk:") {
+t.Errorf("expected output to contain 'Risk:' label, got:\n%s", out)
+}
+// obs-studio is an official APT source with low risk.
+if !strings.Contains(out, "official") {
+t.Errorf("expected trust level 'official' in output, got:\n%s", out)
+}
+if !strings.Contains(out, "low") {
+t.Errorf("expected risk level 'low' in output, got:\n%s", out)
+}
+}
+
+func TestAppExplain_EnrichedTextOutputShowsPrivilege(t *testing.T) {
+buf := &strings.Builder{}
+// APT requires privilege (sudo).
+app := newAppWithStore(buf, newMockStore(), aptManagers())
+if err := app.explain("obs-studio"); err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+out := buf.String()
+if !strings.Contains(out, "Privilege:") {
+t.Errorf("expected output to contain 'Privilege:' label for APT, got:\n%s", out)
+}
+}
+
+func TestAppExplain_EnrichedTextOutputShowsIdentifier(t *testing.T) {
+buf := &strings.Builder{}
+app := newAppWithStore(buf, newMockStore(), aptManagers())
+if err := app.explain("obs-studio"); err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+out := buf.String()
+// The recommended line now shows "source_type (identifier)".
+if !strings.Contains(out, "apt") {
+t.Errorf("expected 'apt' in recommend line, got:\n%s", out)
+}
+if !strings.Contains(out, "obs-studio") {
+t.Errorf("expected source identifier in recommend line, got:\n%s", out)
+}
+}
+
+func TestAppExplain_JSONEnrichedOutput(t *testing.T) {
+buf := &strings.Builder{}
+app := newAppWithStore(buf, newMockStore(), aptManagers())
+if err := app.explainJSON("obs-studio"); err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+var out struct {
+ApplicationID         string `json:"application_id"`
+RecommendedSourceType string `json:"recommended_source_type"`
+TrustLevel            string `json:"trust_level"`
+RiskLevel             string `json:"risk_level"`
+RequiresPrivilege     bool   `json:"requires_privilege"`
+}
+if err := json.Unmarshal([]byte(buf.String()), &out); err != nil {
+t.Fatalf("expected valid JSON, got: %v\noutput: %s", err, buf.String())
+}
+if out.TrustLevel == "" {
+t.Errorf("expected trust_level in JSON output, got empty\nfull output: %s", buf.String())
+}
+if out.RiskLevel == "" {
+t.Errorf("expected risk_level in JSON output, got empty\nfull output: %s", buf.String())
+}
+// obs-studio via APT requires privilege.
+if !out.RequiresPrivilege {
+t.Errorf("expected requires_privilege=true for APT source\nfull output: %s", buf.String())
+}
+}
+
+func TestAppExplain_ResolverExplanationContainsRiskAndTrust(t *testing.T) {
+buf := &strings.Builder{}
+app := newAppWithStore(buf, newMockStore(), aptManagers())
+if err := app.explain("obs-studio"); err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+out := buf.String()
+// The enriched resolver explanation includes risk level wording.
+if !strings.Contains(out, "risk") {
+t.Errorf("expected resolver explanation to mention risk, got:\n%s", out)
+}
+}
