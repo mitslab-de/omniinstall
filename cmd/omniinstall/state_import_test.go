@@ -31,6 +31,7 @@ func validExportJSON() string {
 		SourceIdentifier: "curl",
 		InstallTimestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		InstallStatus:    state.StatusInstalled,
+		VerificationStatus: state.VerificationPassed,
 	}
 	type exportFmt struct {
 		SchemaVersion string                   `json:"schema_version"`
