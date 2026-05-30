@@ -14,6 +14,7 @@ import (
 
 	adapter "github.com/mitslab-de/omniinstall/internal/adapters"
 	aptadapter "github.com/mitslab-de/omniinstall/internal/adapters/apt"
+	dnfadapter "github.com/mitslab-de/omniinstall/internal/adapters/dnf"
 	flatpakadapter "github.com/mitslab-de/omniinstall/internal/adapters/flatpak"
 	"github.com/mitslab-de/omniinstall/internal/discovery"
 	"github.com/mitslab-de/omniinstall/internal/engine"
@@ -91,6 +92,7 @@ func newApp(out io.Writer) *App {
 
 	adapters := []adapter.Adapter{
 		aptadapter.New(),
+		dnfadapter.New(),
 		flatpakadapter.New(),
 	}
 
