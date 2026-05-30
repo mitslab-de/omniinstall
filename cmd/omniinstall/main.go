@@ -46,6 +46,37 @@ func run(args []string) error {
 	case "help", "--help", "-h":
 		printUsage()
 		return nil
+	case "search":
+		query := ""
+		if len(args) > 1 {
+			query = args[1]
+		}
+		app := newApp(os.Stdout)
+		return app.search(query)
+	case "install":
+		appID := ""
+		if len(args) > 1 {
+			appID = args[1]
+		}
+		app := newApp(os.Stdout)
+		return app.install(appID)
+	case "remove":
+		appID := ""
+		if len(args) > 1 {
+			appID = args[1]
+		}
+		app := newApp(os.Stdout)
+		return app.remove(appID)
+	case "explain":
+		appID := ""
+		if len(args) > 1 {
+			appID = args[1]
+		}
+		app := newApp(os.Stdout)
+		return app.explain(appID)
+	case "list":
+		app := newApp(os.Stdout)
+		return app.list()
 	default:
 		return fmt.Errorf("unknown command %q — run 'omniinstall help' for usage", args[0])
 	}
