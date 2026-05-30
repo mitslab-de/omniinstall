@@ -5,6 +5,8 @@
 package adapter
 
 import (
+	"time"
+
 	"github.com/mitslab-de/omniinstall/internal/install"
 	"github.com/mitslab-de/omniinstall/internal/source"
 )
@@ -37,6 +39,9 @@ type Result struct {
 
 	// ChangedSystem indicates whether the system state was actually changed.
 	ChangedSystem bool
+
+	// Duration is the time taken to complete the operation.
+	Duration time.Duration
 }
 
 // VerificationResult is the outcome of a post-install verification check.
