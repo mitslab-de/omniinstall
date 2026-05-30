@@ -417,3 +417,178 @@ func TestMVPCatalog_AllApplicationsAreValid(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Alias normalisation and word-segment scoring tests (task 0026)
+// ---------------------------------------------------------------------------
+
+func TestSearch_NormalisedID_HyphenAsSpace(t *testing.T) {
+// Query "obs-studio" with underscores should match ID "obs-studio" via
+// normalised exact ID match (score 85) when there is no exact ID match.
+// We use a catalog entry where the display name does NOT match the query.
+c := discovery.NewCatalog()
+_ = c.Add(&app.Application{
+ID:          "obs-studio",
+DisplayName: "Open Broadcaster Software",
+Summary:     "Streaming.",
+Categories:  []string{"video"},
+})
+e := discovery.NewLocalEngine(c)
+// Query uses underscores instead of hyphens.
+results, err := e.Search("obs_studio")
+if err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+if len(results) == 0 {
+t.Fatal("expected results for normalised query, got none")
+}
+if results[0].Application.ID != "obs-studio" {
+t.Errorf("expected top result 'obs-studio', got %q", results[0].Application.ID)
+}
+if results[0].MatchScore != 85 {
+t.Errorf("expected score 85 for normalised ID match, got %d", results[0].MatchScore)
+}
+}
+
+func TestSearch_NormalisedAlias_SpaceVsHyphen(t *testing.T) {
+// "vs-code" query should match alias "vs code" via normalised alias match (score 75).
+c := discovery.NewCatalog()
+_ = c.Add(&app.Application{
+ID:          "visual-studio-code",
+DisplayName: "Visual Studio Code",
+Summary:     "Code editor.",
+Categories:  []string{"development"},
+Aliases:     []string{"vs code"},
+})
+e := discovery.NewLocalEngine(c)
+results, err := e.Search("vs-code")
+if err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+if len(results) == 0 {
+t.Fatal("expected results for normalised alias query, got none")
+}
+if results[0].Application.ID != "visual-studio-code" {
+t.Errorf("expected 'visual-studio-code', got %q", results[0].Application.ID)
+}
+if results[0].MatchScore != 75 {
+t.Errorf("expected score 75 for normalised alias match, got %d", results[0].MatchScore)
+}
+}
+
+func TestSearch_WordSegment_Studio(t *testing.T) {
+// "studio" matches both "obs-studio" (word segment, score 45) and
+// "visual-studio-code" (word segment, score 45) and possibly display name contains.
+// obs-studio gets score 45 (word segment); visual-studio-code also gets 45.
+// visual studio code display name contains "studio" → score 30.
+// Both IDs have "studio" as a segment → score 45 each. obs-studio ID also
+// contains "studio" → score 40. Since word-segment check (45) fires before
+// contains (40), obs-studio gets 45.
+e := newEngine(t)
+results, err := e.Search("studio")
+if err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+if len(results) == 0 {
+t.Fatal("expected results for word-segment query, got none")
+}
+foundOBS, foundVSC := false, false
+for _, r := range results {
+if r.Application.ID == "obs-studio" {
+foundOBS = true
+if r.MatchScore < 40 {
+t.Errorf("obs-studio score too low for 'studio' query: %d", r.MatchScore)
+}
+}
+if r.Application.ID == "visual-studio-code" {
+foundVSC = true
+if r.MatchScore < 30 {
+t.Errorf("visual-studio-code score too low for 'studio' query: %d", r.MatchScore)
+}
+}
+}
+if !foundOBS {
+t.Error("expected obs-studio in results for query 'studio'")
+}
+if !foundVSC {
+t.Error("expected visual-studio-code in results for query 'studio'")
+}
+}
+
+func TestSearch_NormalisedID_BeatsPartialMatch(t *testing.T) {
+// Normalised exact match (85) must outrank alias prefix (50) and
+// prefix ID match (70). We use a display name that does NOT match the
+// query to avoid the display name exact match (90) interfering.
+c := discovery.NewCatalog()
+_ = c.Add(&app.Application{
+ID:          "obs-studio",
+DisplayName: "Open Broadcaster Studio",
+Summary:     "Streaming.",
+Categories:  []string{"video"},
+Aliases:     []string{"obs recorder"},
+})
+_ = c.Add(&app.Application{
+ID:          "obs-remote",
+DisplayName: "Open Broadcaster Remote",
+Summary:     "Control OBS.",
+Categories:  []string{"video"},
+})
+e := discovery.NewLocalEngine(c)
+// Query "obs_studio" normalises to "obs studio" which equals normalised ID "obs studio".
+results, err := e.Search("obs_studio")
+if err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+if len(results) == 0 {
+t.Fatal("expected results")
+}
+if results[0].Application.ID != "obs-studio" {
+t.Errorf("expected 'obs-studio' to rank first, got %q", results[0].Application.ID)
+}
+if results[0].MatchScore != 85 {
+t.Errorf("expected score 85 (normalised exact ID), got %d", results[0].MatchScore)
+}
+}
+
+func TestSearch_ExactID_BeatsNormalised(t *testing.T) {
+// An exact display name match (90) must always outrank a normalised ID match (85).
+// "obs studio" (query) matches display name "OBS Studio" exactly (90)
+// and also matches normalised ID "obs-studio" (85). The display name wins.
+e := newEngine(t)
+results, err := e.Search("obs studio")
+if err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+if len(results) == 0 {
+t.Fatal("expected results")
+}
+if results[0].Application.ID != "obs-studio" {
+t.Errorf("expected 'obs-studio' first, got %q", results[0].Application.ID)
+}
+// Display name "OBS Studio" exactly matches query "obs studio" → score 90.
+if results[0].MatchScore != 90 {
+t.Errorf("expected score 90 (exact display name beats normalised ID), got %d", results[0].MatchScore)
+}
+}
+
+func TestNormalizeIdentifier_Various(t *testing.T) {
+cases := []struct {
+input string
+want  string
+}{
+{"obs-studio", "obs studio"},
+{"obs_studio", "obs studio"},
+{"obs studio", "obs studio"},
+{"OBS-Studio", "obs studio"},
+{"  obs  studio  ", "obs studio"},
+{"visual-studio-code", "visual studio code"},
+{"", ""},
+{"git", "git"},
+}
+for _, tc := range cases {
+got := discovery.NormalizeIdentifier(tc.input)
+if got != tc.want {
+t.Errorf("NormalizeIdentifier(%q) = %q, want %q", tc.input, got, tc.want)
+}
+}
+}
