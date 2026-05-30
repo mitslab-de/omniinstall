@@ -82,15 +82,71 @@ func (a *Adapter) CanHandle(sourceType source.Type) bool {
 }
 
 // CheckInstalled returns the installation state for the given Flatpak application ID.
+//
+// It checks the system installation first, then the user installation.
+// A non-zero exit code from `flatpak info` means the application is not found
+// in that scope; any stderr that looks like a backend error (permissions,
+// no installations configured) is surfaced as StateUnknown.
 func (a *Adapter) CheckInstalled(sourceIdentifier string) (adapter.InstalledState, error) {
-	out, exitCode, err := a.exec.Run("flatpak", "info", sourceIdentifier)
-	if err != nil && exitCode == 0 {
-		return adapter.StateUnknown, fmt.Errorf("flatpak readiness check failed: %w", err)
+	// Try system scope first, then user scope.
+	for _, scope := range []string{"--system", "--user"} {
+		out, exitCode, err := a.exec.Run("flatpak", "info", scope, sourceIdentifier)
+		if err != nil && exitCode == 0 {
+			// Command could not be launched at all.
+			return adapter.StateUnknown, fmt.Errorf("flatpak info failed: %w", err)
+		}
+		if exitCode != 0 {
+			// Surface backend errors so callers can distinguish "not found"
+			// from "flatpak is broken".
+			if errState, errMsg := classifyFlatpakInfoError(out); errState != "" {
+				return errState, fmt.Errorf("%s", errMsg)
+			}
+			// Normal "not installed in this scope" — continue to next scope.
+			continue
+		}
+		// Output may include an "ID:" or "Application:" line; confirm it.
+		if parseFlatpakInfoInstalled(out) {
+			return adapter.StateInstalled, nil
+		}
 	}
-	if exitCode != 0 || strings.TrimSpace(out) == "" {
-		return adapter.StateNotInstalled, nil
+	return adapter.StateNotInstalled, nil
+}
+
+// parseFlatpakInfoInstalled returns true when `flatpak info` output contains
+// a non-empty ID or Application field, confirming the app is installed.
+func parseFlatpakInfoInstalled(out string) bool {
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return false
 	}
-	return adapter.StateInstalled, nil
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		// flatpak info prints "ID:         <id>" or "Application: <id>"
+		if strings.HasPrefix(line, "ID:") || strings.HasPrefix(line, "Application:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+				return true
+			}
+		}
+	}
+	// If we got output but no recognised fields, assume installed
+	// (older flatpak versions may omit the ID header).
+	return true
+}
+
+// classifyFlatpakInfoError inspects error output from a failed `flatpak info`
+// invocation and returns (StateUnknown, message) when the failure indicates a
+// backend problem rather than a simple "not installed". Returns ("", "") when
+// the error is a normal "package not found" situation.
+func classifyFlatpakInfoError(out string) (adapter.InstalledState, string) {
+	lower := strings.ToLower(out)
+	if strings.Contains(lower, "no installations") {
+		return adapter.StateUnknown, "flatpak has no installations configured"
+	}
+	if strings.Contains(lower, "permission denied") {
+		return adapter.StateUnknown, "flatpak permission denied"
+	}
+	return "", ""
 }
 
 // Install installs the Flatpak application described in the plan.
