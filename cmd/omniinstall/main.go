@@ -21,15 +21,51 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 // version is the current OmniInstall version.
 const version = "0.1.0-dev"
 
+const (
+	ExitCodeSuccess            = 0
+	ExitCodeUsage              = 2
+	ExitCodeNotFound           = 3
+	ExitCodeBackendUnavailable = 4
+	ExitCodeExecutionFailed    = 5
+)
+
 func main() {
-	if err := run(os.Args[1:]); err != nil {
+	os.Exit(runCLI(os.Args[1:]))
+}
+
+func runCLI(args []string) int {
+	if err := run(args); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return exitCodeForError(err)
+	}
+	return ExitCodeSuccess
+}
+
+func exitCodeForError(err error) int {
+	if err == nil {
+		return ExitCodeSuccess
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.HasPrefix(msg, "usage:"),
+		strings.Contains(msg, "unknown command"):
+		return ExitCodeUsage
+	case strings.Contains(msg, " not found"),
+		strings.Contains(msg, "no sources available for"),
+		strings.Contains(msg, "not recorded as installed"):
+		return ExitCodeNotFound
+	case strings.Contains(msg, "no compatible source found"),
+		strings.Contains(msg, "no available adapter for source type"),
+		strings.Contains(msg, "backend_unavailable"):
+		return ExitCodeBackendUnavailable
+	default:
+		return ExitCodeExecutionFailed
 	}
 }
 
