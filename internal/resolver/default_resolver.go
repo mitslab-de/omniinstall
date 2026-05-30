@@ -14,8 +14,9 @@ import (
 // It ranks sources by type priority, trust level, risk level, and user
 // preferences, producing a deterministic ordered recommendation list.
 type DefaultResolver struct {
-	logger logging.Emitter
-	now    func() time.Time
+	logger         logging.Emitter
+	now            func() time.Time
+	priorityConfig PriorityConfig
 }
 
 // NewDefaultResolver creates a DefaultResolver with default settings.
@@ -26,6 +27,13 @@ func NewDefaultResolver() *DefaultResolver {
 // WithLogger configures structured action logging for resolver operations.
 func (r *DefaultResolver) WithLogger(logger logging.Emitter) *DefaultResolver {
 	r.logger = logger
+	return r
+}
+
+// WithPriorityConfig replaces the default source type priority table.
+// Use this to adjust the preference ordering per distribution or user policy.
+func (r *DefaultResolver) WithPriorityConfig(cfg PriorityConfig) *DefaultResolver {
+	r.priorityConfig = cfg
 	return r
 }
 
@@ -68,7 +76,7 @@ func (r *DefaultResolver) Resolve(
 
 	var candidates []scored
 	for _, s := range available {
-		sc := scoreSource(s, ctx)
+		sc := scoreSource(s, ctx, r.priorityConfig)
 		if sc < 0 {
 			continue // disqualified
 		}

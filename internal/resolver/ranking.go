@@ -12,25 +12,43 @@ var nativeTypes = map[source.Type]bool{
 	source.TypeZypper: true,
 }
 
+// PriorityConfig defines the base priority score for each source type.
+//
+// A zero value uses DefaultPriorityConfig. Higher scores are more preferred.
+// Negative scores disqualify a source type entirely.
+type PriorityConfig map[source.Type]int
+
+// DefaultPriorityConfig is the built-in source priority table:
+// native managers > flatpak > vendor > snap > appimage > direct-download.
+var DefaultPriorityConfig = PriorityConfig{
+	source.TypeAPT:            50,
+	source.TypeDNF:            50,
+	source.TypePacman:         50,
+	source.TypeZypper:         50,
+	source.TypeFlatpak:        40,
+	source.TypeVendor:         35,
+	source.TypeSnap:           30,
+	source.TypeAppImage:       25,
+	source.TypeDirectDownload: 20,
+}
+
+// priority returns the priority score for the given source type.
+// If the config is nil, the DefaultPriorityConfig is used.
+// Unknown types receive a score of 10.
+func (cfg PriorityConfig) priority(t source.Type) int {
+	if cfg == nil {
+		return DefaultPriorityConfig.priority(t)
+	}
+	if score, ok := cfg[t]; ok {
+		return score
+	}
+	return 10
+}
+
 // baseTypePriority returns the baseline score for a source type.
 // Higher is more preferred, per specs/05-RESOLVER_RULES.md.
 func baseTypePriority(t source.Type) int {
-	switch t {
-	case source.TypeAPT, source.TypeDNF, source.TypePacman, source.TypeZypper:
-		return 50 // native package managers
-	case source.TypeFlatpak:
-		return 40
-	case source.TypeVendor:
-		return 35
-	case source.TypeSnap:
-		return 30
-	case source.TypeAppImage:
-		return 25
-	case source.TypeDirectDownload:
-		return 20
-	default:
-		return 10
-	}
+	return DefaultPriorityConfig.priority(t)
 }
 
 // trustModifier returns the score adjustment for a trust level.
@@ -77,7 +95,8 @@ func preferenceModifier(t source.Type, prefs UserPreferences) int {
 
 // scoreSource computes the total ranking score for a source given the system
 // context. Returns -1 if the source is disqualified (blocked or unavailable).
-func scoreSource(s source.Source, ctx SystemContext) int {
+// cfg may be nil to use DefaultPriorityConfig.
+func scoreSource(s source.Source, ctx SystemContext, cfg PriorityConfig) int {
 	// Blocked sources are never recommended.
 	if s.TrustLevel == source.TrustBlocked {
 		return -1
@@ -95,7 +114,7 @@ func scoreSource(s source.Source, ctx SystemContext) int {
 		return -1
 	}
 
-	return baseTypePriority(s.SourceType) +
+	return cfg.priority(s.SourceType) +
 		trustModifier(s.TrustLevel) +
 		riskModifier(s.RiskLevel) +
 		preferenceModifier(s.SourceType, ctx.UserPreferences)

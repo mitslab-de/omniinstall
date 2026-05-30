@@ -397,3 +397,141 @@ func TestDefaultResolverEmitsStructuredLogOnFailure(t *testing.T) {
 		t.Fatalf("expected invalid_application_id, got %q", entries[0].ErrorCategory)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Priority ordering and PriorityConfig tests (task 0036)
+// ---------------------------------------------------------------------------
+
+func TestDefaultPriorityConfig_NativeBeforeFlatpak(t *testing.T) {
+// APT (native, score 50) should beat Flatpak (score 40) when both have
+// identical trust and risk levels.
+apt := source.Source{
+ApplicationID:    "git",
+SourceType:       source.TypeAPT,
+SourceIdentifier: "git",
+TrustLevel:       source.TrustOfficial,
+RiskLevel:        source.RiskLow,
+}
+flatpak := source.Source{
+ApplicationID:    "git",
+SourceType:       source.TypeFlatpak,
+SourceIdentifier: "org.git.Git",
+TrustLevel:       source.TrustOfficial,
+RiskLevel:        source.RiskLow,
+}
+r := resolver.NewDefaultResolver()
+recs, err := r.Resolve("git", []source.Source{flatpak, apt}, sysWithAll())
+if err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+if len(recs) < 2 {
+t.Fatalf("expected 2 recommendations, got %d", len(recs))
+}
+if recs[0].Plan.SourceType != source.TypeAPT {
+t.Errorf("expected APT first (native priority), got %q", recs[0].Plan.SourceType)
+}
+}
+
+func TestDefaultPriorityConfig_FlatpakBeforeSnap(t *testing.T) {
+flatpak := source.Source{
+ApplicationID:    "vlc",
+SourceType:       source.TypeFlatpak,
+SourceIdentifier: "org.videolan.VLC",
+TrustLevel:       source.TrustVerified,
+RiskLevel:        source.RiskLow,
+}
+snap := source.Source{
+ApplicationID:    "vlc",
+SourceType:       source.TypeSnap,
+SourceIdentifier: "vlc",
+TrustLevel:       source.TrustVerified,
+RiskLevel:        source.RiskLow,
+}
+r := resolver.NewDefaultResolver()
+recs, err := r.Resolve("vlc", []source.Source{snap, flatpak}, sysWithAll())
+if err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+if len(recs) < 2 {
+t.Fatalf("expected 2 recommendations, got %d", len(recs))
+}
+if recs[0].Plan.SourceType != source.TypeFlatpak {
+t.Errorf("expected Flatpak first (priority over snap), got %q", recs[0].Plan.SourceType)
+}
+}
+
+func TestWithPriorityConfig_FlatpakOverNative(t *testing.T) {
+// Custom config that elevates Flatpak above native.
+custom := resolver.PriorityConfig{
+source.TypeAPT:     30,
+source.TypeFlatpak: 60,
+source.TypeSnap:    20,
+}
+apt := source.Source{
+ApplicationID:    "git",
+SourceType:       source.TypeAPT,
+SourceIdentifier: "git",
+TrustLevel:       source.TrustOfficial,
+RiskLevel:        source.RiskLow,
+}
+flatpak := source.Source{
+ApplicationID:    "git",
+SourceType:       source.TypeFlatpak,
+SourceIdentifier: "org.git.Git",
+TrustLevel:       source.TrustOfficial,
+RiskLevel:        source.RiskLow,
+}
+r := resolver.NewDefaultResolver().WithPriorityConfig(custom)
+recs, err := r.Resolve("git", []source.Source{apt, flatpak}, sysWithAll())
+if err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+if len(recs) < 2 {
+t.Fatalf("expected 2 recommendations, got %d", len(recs))
+}
+if recs[0].Plan.SourceType != source.TypeFlatpak {
+t.Errorf("expected Flatpak first with custom config, got %q", recs[0].Plan.SourceType)
+}
+}
+
+func TestPriorityConfig_TieBreakByIdentifier(t *testing.T) {
+// Two APT sources with identical trust/risk — tie-break by SourceIdentifier.
+apt1 := source.Source{
+ApplicationID:    "curl",
+SourceType:       source.TypeAPT,
+SourceIdentifier: "curl",
+TrustLevel:       source.TrustOfficial,
+RiskLevel:        source.RiskLow,
+}
+apt2 := source.Source{
+ApplicationID:    "curl",
+SourceType:       source.TypeAPT,
+SourceIdentifier: "libcurl",
+TrustLevel:       source.TrustOfficial,
+RiskLevel:        source.RiskLow,
+}
+r := resolver.NewDefaultResolver()
+recs, err := r.Resolve("curl", []source.Source{apt2, apt1}, sysWithAll())
+if err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+if len(recs) < 2 {
+t.Fatalf("expected 2 recommendations, got %d", len(recs))
+}
+// "curl" sorts before "libcurl".
+if recs[0].Plan.SourceIdentifier != "curl" {
+t.Errorf("expected tie-break by identifier: 'curl' before 'libcurl', got %q", recs[0].Plan.SourceIdentifier)
+}
+}
+
+func TestDefaultPriorityConfig_ValuesDefined(t *testing.T) {
+cfg := resolver.DefaultPriorityConfig
+// Native managers should have the highest default score.
+nativeScore := cfg[source.TypeAPT]
+if cfg[source.TypeFlatpak] >= nativeScore {
+t.Errorf("expected Flatpak score (%d) < APT score (%d)", cfg[source.TypeFlatpak], nativeScore)
+}
+if cfg[source.TypeSnap] >= cfg[source.TypeFlatpak] {
+t.Errorf("expected Snap score (%d) < Flatpak score (%d)", cfg[source.TypeSnap], cfg[source.TypeFlatpak])
+}
+}
