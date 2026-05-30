@@ -25,7 +25,7 @@ Implement the first version of the Discovery Engine.
 - docs/architecture/02-DISCOVERY_ENGINE.md
 - specs/01-APPLICATION_MODEL.md
 
-## Completion Note
+## Completion Notes
 
 Implemented on 2026-05-30.
 
